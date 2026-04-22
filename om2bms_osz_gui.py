@@ -18,6 +18,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 
 from om2bms.pipeline.types import ConversionOptions, ConversionResult, DifficultyAnalysisMode
+from om2bms.analysis.service import DifficultyAnalyzerService
 from om2bms.services.conversion_service import ConversionService
 
 
@@ -432,72 +433,77 @@ class ConverterTab:
         app._append_log("Get Ready.")
         app._sync_export_button()
 
-
 class AnalyzerTab:
     def __init__(self, app, parent):
         self.app = app
         self.parent = parent
-
-        from queue import Queue
-        import threading
-
         self.queue = Queue()
         self.worker_thread = None
-
+        self.export_rows: list[dict] = []  # 用于导出
+        self.export_default_name = "Analyzer_Results.csv"
         self._build()
         self.parent.after(150, self._process_queue)
 
+    # ===========================
+    # 构建界面
+    # ===========================
     def _build(self):
-        import tkinter as tk
-        from tkinter import ttk, filedialog
-        from tkinter.scrolledtext import ScrolledText
-
-        app = self.app
-
         main = ttk.Frame(self.parent, padding=20)
         main.pack(fill="both", expand=True)
 
-        # ===== 输入区域 =====
+        # ===== 输入区 =====
         input_box = ttk.LabelFrame(main, text="输入")
         input_box.pack(fill="x", pady=5)
 
         self.input_var = tk.StringVar()
-
         ttk.Entry(input_box, textvariable=self.input_var).pack(
-            fill="x", padx=5, pady=5)
+            fill="x", padx=5, pady=5
+        )
 
         btn_row = ttk.Frame(input_box)
         btn_row.pack(fill="x", padx=5, pady=5)
+        ttk.Button(btn_row, text="选择文件", command=self._select_file).pack(side="left")
+        ttk.Button(btn_row, text="选择文件夹",
+                   command=self._select_folder).pack(side="left", padx=5)
 
-        ttk.Button(btn_row, text="选择文件",
-                   command=self._select_file).pack(side="left")
-        ttk.Button(btn_row, text="选择文件夹", command=self._select_folder).pack(
-            side="left", padx=5)
-
-        # ===== 控制区域 =====
+        # ===== 控制区 =====
         control_box = ttk.LabelFrame(main, text="控制")
         control_box.pack(fill="x", pady=5)
 
-        self.start_btn = ttk.Button(
-            control_box, text="开始分析", command=self._start)
+        self.start_btn = ttk.Button(control_box, text="开始分析", command=self._start)
         self.start_btn.pack(side="left", padx=5, pady=5)
+
+        # ✅ 导出按钮（使用相同逻辑）
+        self.export_btn = ttk.Button(
+            control_box, text="导出结果表格 (CSV)", command=self._export_results_table)
+        self.export_btn.pack(side="left", padx=5)
 
         self.progress = ttk.Progressbar(control_box, mode="indeterminate")
         self.progress.pack(fill="x", padx=5, pady=5)
 
-        # ===== 表格 =====
+       # ===== 结果表格 =====
         table_box = ttk.LabelFrame(main, text="结果")
         table_box.pack(fill="both", expand=True, pady=5)
 
-        columns = ("file", "difficulty", "label", "raw", "source")
+        style = ttk.Style()
+        style.configure("Treeview", rowheight=40)
+        # style.configure("Treeview.Heading", font=("Microsoft YaHei", 10, "bold"))
 
+        columns = ("file", "difficulty", "label", "raw", "source")
         self.tree = ttk.Treeview(table_box, columns=columns, show="headings")
 
-        for col in columns:
-            self.tree.heading(col, text=col)
-            self.tree.column(col, anchor="center", width=120)
 
-        self.tree.pack(fill="both", expand=True)
+        for col in columns:
+            self.tree.heading(col, text=col.capitalize())
+            self.tree.column(col, anchor="center", width=150)
+
+        y_scrollbar = ttk.Scrollbar(table_box, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=y_scrollbar.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        y_scrollbar.grid(row=0, column=1, sticky="ns")
+
+        table_box.rowconfigure(0, weight=1)
+        table_box.columnconfigure(0, weight=1)
 
         # ===== 日志 =====
         log_box = ttk.LabelFrame(main, text="日志")
@@ -506,96 +512,93 @@ class AnalyzerTab:
         self.log = ScrolledText(log_box, height=8)
         self.log.pack(fill="both", expand=True)
 
-    # =========================
+    # ===========================
     # 文件选择
-    # =========================
+    # ===========================
     def _select_file(self):
-        from tkinter import filedialog
         path = filedialog.askopenfilename(
-            filetypes=[("BMS", "*.bms *.bme *.bml *.pms"), ("All", "*.*")]
+            title="选择BMS文件",
+            filetypes=[("BMS 文件", "*.bms *.bme *.bml *.pms"), ("所有文件", "*.*")]
         )
         if path:
             self.input_var.set(path)
 
     def _select_folder(self):
-        from tkinter import filedialog
-        path = filedialog.askdirectory()
+        path = filedialog.askdirectory(title="选择BMS文件夹")
         if path:
             self.input_var.set(path)
 
-    # =========================
-    # 启动分析
-    # =========================
+    # ===========================
+    # 开始分析
+    # ===========================
     def _start(self):
         if self.worker_thread and self.worker_thread.is_alive():
             return
 
         path = self.input_var.get().strip()
         if not path:
-            self._log("请选择输入路径")
+            messagebox.showinfo(APP_TITLE, "请选择文件或文件夹路径")
             return
 
         self.progress.start(10)
         self.start_btn.config(state="disabled")
+        self.export_btn.config(state="disabled")
         self.tree.delete(*self.tree.get_children())
+        self.export_rows.clear()
 
-        import threading
         self.worker_thread = threading.Thread(
-            target=self._run, args=(path,), daemon=True)
+            target=self._run, args=(path,), daemon=True
+        )
         self.worker_thread.start()
 
-    # =========================
-    # 核心分析逻辑
-    # =========================
+    # ===========================
+    # 后台执行分析
+    # ===========================
     def _run(self, path):
-        from pathlib import Path
-        from om2bms.analysis.service import DifficultyAnalyzerService
-
         service = DifficultyAnalyzerService()
-
         try:
             p = Path(path)
-
             if p.is_file():
                 self._analyze_one(service, p)
             else:
-                files = list(p.glob("*.bms")) + list(p.glob("*.bme")) + \
-                    list(p.glob("*.bml")) + list(p.glob("*.pms"))
+                files = list(p.glob("*.bms")) + list(p.glob("*.bme")) \
+                    + list(p.glob("*.bml")) + list(p.glob("*.pms"))
+                if not files:
+                    self.queue.put(("log", "未找到任何可分析文件"))
+                    return
 
                 total = len(files)
                 for i, f in enumerate(files, 1):
-                    self.queue.put(("log", f"[{i}/{total}] {f.name}"))
+                    self.queue.put(("log", f"[{i}/{total}] 分析 {f.name}..."))
                     self._analyze_one(service, f)
 
             self.queue.put(("done", "分析完成"))
-
         except Exception as e:
             self.queue.put(("error", str(e)))
 
-    def _analyze_one(self, service, path):
+    # ===========================
+    # 单文件分析
+    # ===========================
+    def _analyze_one(self, service, path: Path):
         try:
-            self._log("Analyze one")
-            result = service.analyze_file(path)
+            result = service.analyze_path(path)
+            row = {
+                "file": path.name,
+                "difficulty": f"{result.estimated_difficulty:.2f}",
+                "label": result.label or "-",
+                "raw": f"{result.raw_score:.4f}",
+                "source": result.source,
+            }
 
-            self.queue.put((
-                "result",
-                {
-                    "file": path.name,
-                    "difficulty": result.estimated_difficulty,
-                    "label": result.label,
-                    "raw": result.raw_score,
-                    "source": result.source,
-                }
-            ))
+            # 添加到 Treeview
+            self.queue.put(("result", row))
         except Exception as e:
-            self.queue.put(("log", f"失败: {path.name} {e}"))
+            self.queue.put(("log", f"失败: {path.name}: {e}"))
 
-    # =========================
-    # UI更新
-    # =========================
+    # ===========================
+    # UI 队列更新
+    # ===========================
     def _process_queue(self):
-        from queue import Empty
-
         try:
             while True:
                 kind, payload = self.queue.get_nowait()
@@ -604,32 +607,64 @@ class AnalyzerTab:
                     self._log(payload)
 
                 elif kind == "result":
-                    self.tree.insert("", "end", values=(
+                    self.tree.insert("", "end", values=[
                         payload["file"],
-                        f"{payload['difficulty']:.2f}",
+                        payload["difficulty"],
                         payload["label"],
-                        f"{payload['raw']:.4f}",
+                        payload["raw"],
                         payload["source"],
-                    ))
+                    ])
+                    self.export_rows.append(payload)  # ✅ 保存导出数据
 
                 elif kind == "done":
                     self._log(payload)
                     self.progress.stop()
                     self.start_btn.config(state="normal")
+                    self.export_btn.config(state="normal")
 
                 elif kind == "error":
-                    self._log("错误: " + payload)
+                    self._log("错误：" + payload)
                     self.progress.stop()
                     self.start_btn.config(state="normal")
+                    self.export_btn.config(state="normal")
 
         except Empty:
             pass
 
         self.parent.after(150, self._process_queue)
 
-    def _log(self, text):
+    # ===========================
+    # 日志输出
+    # ===========================
+    def _log(self, text: str):
         self.log.insert("end", text + "\n")
         self.log.see("end")
+    def _export_results_table(self) -> None:
+        if not self.export_rows:
+            messagebox.showinfo(APP_TITLE, "当前还没有可导出的分析结果。")
+            return
+
+        export_path = filedialog.asksaveasfilename(
+            title="导出结果表格",
+            defaultextension=".csv",
+            initialfile=self.export_default_name,
+            filetypes=[("CSV 表格", "*.csv"), ("所有文件", "*.*")],
+        )
+        if not export_path:
+            return
+
+        fieldnames = [label for _, label in EXPORT_COLUMNS]
+        with open(export_path, "w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in self.export_rows:
+                writer.writerow({
+                    label: row.get(key, "")
+                    for key, label in EXPORT_COLUMNS
+                })
+
+        self._log(f"已导出结果表格：{export_path}")
+        messagebox.showinfo(APP_TITLE, f"结果表格已导出到：\n{export_path}")
 
 
 class TableGenTab:
