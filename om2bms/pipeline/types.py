@@ -25,6 +25,7 @@ class ConversionOptions:
     hitsound: bool = True
     bg: bool = True
     offset: int = 0
+    tn_value: float = 0.2
     judge: int = 3
     output_folder_name: Optional[str] = None
     enable_difficulty_analysis: bool = False

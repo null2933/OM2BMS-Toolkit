@@ -168,6 +168,7 @@ class ConverterTab:
     def __init__(self, app, parent):
         self.app = app
         self.parent = parent
+        self.parent.update_idletasks()
         self._build()
 
     def _build(self):
@@ -253,30 +254,49 @@ class ConverterTab:
             wraplength=280,
         ).grid(row=3, column=0, sticky="w")
 
-        # ===== 转换选项 =====
+       # ===== 转换选项 =====
         option_box = ttk.LabelFrame(left, text="转换选项", style="Card.TLabelframe")
         option_box.grid(row=1, column=0, sticky="ew", padx=10, pady=8)
         option_box.columnconfigure(0, weight=1)
         option_box.columnconfigure(1, weight=1)
+        option_box.columnconfigure(2, weight=1)  # ✅ 为T/N新增一列
 
         hitsound_check = ttk.Checkbutton(
             option_box, text="包含击打音效", variable=app.hitsound_var
         )
         hitsound_check.grid(row=0, column=0, sticky="w")
 
-        bg_check = ttk.Checkbutton(
-            option_box, text="处理背景图片", variable=app.bg_var
-        )
+        bg_check = ttk.Checkbutton(option_box, text="处理背景图片", variable=app.bg_var)
         bg_check.grid(row=0, column=1, sticky="w")
 
+        # ✅ 修改标签行，增加 T/N
         ttk.Label(option_box, text="偏移量(ms)").grid(row=1, column=0, sticky="w")
         ttk.Label(option_box, text="判定难度").grid(row=1, column=1, sticky="w")
+        ttk.Label(option_box, text="T/N").grid(row=1, column=2, sticky="w")
 
+        # 偏移量输入框
         app.offset_entry = ttk.Entry(option_box, textvariable=app.offset_var)
         app.offset_entry.grid(row=2, column=0, sticky="ew")
 
+        # 判定难度按钮区域（原样保留）
         judge_frame = ttk.Frame(option_box)
         judge_frame.grid(row=2, column=1, sticky="ew")
+
+        for i, label in enumerate(JUDGE_OPTIONS.keys()):
+            btn = ttk.Radiobutton(
+                judge_frame,
+                text=label,
+                variable=app.judge_var,
+                value=label,
+            )
+            btn.grid(row=i // 2, column=i % 2, sticky="w")
+            app.judge_buttons.append(btn)
+
+        # ✅ 新增 T/N 输入框
+        app.tn_var = tk.DoubleVar(value=0.2)  # 默认值 0.2
+        app.tn_entry = ttk.Entry(option_box, textvariable=app.tn_var, width=8)
+        app.tn_entry.grid(row=2, column=2, sticky="ew")
+
 
         for i, label in enumerate(JUDGE_OPTIONS.keys()):
             btn = ttk.Radiobutton(
@@ -475,7 +495,7 @@ class AnalyzerTab:
 
         # ✅ 导出按钮（使用相同逻辑）
         self.export_btn = ttk.Button(
-            control_box, text="导出结果表格 (CSV)", command=self._export_results_table)
+            control_box, text="导出分析表格", command=self._export_results_table)
         self.export_btn.pack(side="left", padx=5)
 
         self.progress = ttk.Progressbar(control_box, mode="indeterminate")
@@ -488,10 +508,8 @@ class AnalyzerTab:
         style = ttk.Style()
         style.configure("Treeview", rowheight=40)
         # style.configure("Treeview.Heading", font=("Microsoft YaHei", 10, "bold"))
-
-        columns = ("file", "difficulty", "label", "raw", "source")
+        columns = ("Chart", "Difficulty", "Level")
         self.tree = ttk.Treeview(table_box, columns=columns, show="headings")
-
 
         for col in columns:
             self.tree.heading(col, text=col.capitalize())
@@ -561,8 +579,8 @@ class AnalyzerTab:
             if p.is_file():
                 self._analyze_one(service, p)
             else:
-                files = list(p.glob("*.bms")) + list(p.glob("*.bme")) \
-                    + list(p.glob("*.bml")) + list(p.glob("*.pms"))
+                files = list(p.rglob("*.bms")) + list(p.rglob("*.bme")) \
+                    + list(p.rglob("*.bml")) + list(p.rglob("*.pms"))
                 if not files:
                     self.queue.put(("log", "未找到任何可分析文件"))
                     return
@@ -582,10 +600,22 @@ class AnalyzerTab:
     def _analyze_one(self, service, path: Path):
         try:
             result = service.analyze_path(path)
+            file_stem = Path(path).stem  # 自动去除 .bms / .bme / .bml / .pms 等后缀
+
+            # 获取难度值与小数部分
+            diff_value = float(result.estimated_difficulty or 0)
+            diff_int = int(diff_value)
+            diff_frac = diff_value - diff_int
+            addon = ""
+            if 0.25 <= diff_frac < 0.50:
+                addon = "+"
+            elif 0.50 <= diff_frac < 0.75:
+                addon = "-"
+            difficulty_display = f"{result.label}{addon}"
             row = {
-                "file": path.name,
-                "difficulty": f"{result.estimated_difficulty:.2f}",
-                "label": result.label or "-",
+                "Chart": file_stem,
+                "Difficulty": f"{result.estimated_difficulty:.2f}",
+                "Level": difficulty_display or "-",
                 "raw": f"{result.raw_score:.4f}",
                 "source": result.source,
             }
@@ -608,9 +638,9 @@ class AnalyzerTab:
 
                 elif kind == "result":
                     self.tree.insert("", "end", values=[
-                        payload["file"],
-                        payload["difficulty"],
-                        payload["label"],
+                        payload["Chart"],
+                        payload["Difficulty"],
+                        payload["Level"],
                         payload["raw"],
                         payload["source"],
                     ])
@@ -640,31 +670,36 @@ class AnalyzerTab:
         self.log.insert("end", text + "\n")
         self.log.see("end")
     def _export_results_table(self) -> None:
+        """导出当前 GUI 表格内容到 CSV（仅导出 row 中定义的 5 列）"""
         if not self.export_rows:
             messagebox.showinfo(APP_TITLE, "当前还没有可导出的分析结果。")
             return
 
         export_path = filedialog.asksaveasfilename(
-            title="导出结果表格",
+            title="导出分析结果",
             defaultextension=".csv",
             initialfile=self.export_default_name,
-            filetypes=[("CSV 表格", "*.csv"), ("所有文件", "*.*")],
+            filetypes=[("CSV 表格", "*.csv"), ("所有文件", "*.*")]
         )
         if not export_path:
             return
 
-        fieldnames = [label for _, label in EXPORT_COLUMNS]
-        with open(export_path, "w", encoding="utf-8-sig", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=fieldnames)
-            writer.writeheader()
-            for row in self.export_rows:
-                writer.writerow({
-                    label: row.get(key, "")
-                    for key, label in EXPORT_COLUMNS
-                })
+        # ✅ 只包含 row 里的五个字段
+        fieldnames = ["Chart", "Difficulty", "Level", "raw", "source"]
 
-        self._log(f"已导出结果表格：{export_path}")
-        messagebox.showinfo(APP_TITLE, f"结果表格已导出到：\n{export_path}")
+        try:
+            with open(export_path, "w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                writer.writeheader()
+                for row in self.export_rows:
+                    # 按当前 row 字段导出
+                    writer.writerow({k: row.get(k, "") for k in fieldnames})
+
+            self._log(f"已导出结果表格：{export_path}")
+            messagebox.showinfo(APP_TITLE, f"结果表格已导出到：\n{export_path}")
+
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, f"导出失败：{e}")
 
 
 class TableGenTab:
@@ -995,7 +1030,13 @@ class Om2BmsGuiApp:
 
         analysis_mode = self._get_analysis_mode_value()
         enable_analysis = mode != "zip" and analysis_mode != DifficultyAnalysisMode.OFF.value
+        try:
+            tn_value = float(self.tn_var.get())
+        except (ValueError, tk.TclError):
+            raise ValueError("T/N 必须是数字。")
 
+        if not (0 < tn_value < 10):
+            raise ValueError("T/N 值必须大于 0 且小于 10。")
         judge_label = self.judge_var.get().strip()
         if judge_label not in JUDGE_OPTIONS:
             raise ValueError("请从下拉框选择有效的判定难度。")
@@ -1008,6 +1049,7 @@ class Om2BmsGuiApp:
             enable_difficulty_analysis=enable_analysis,
             difficulty_analysis_mode=analysis_mode,
             difficulty_target_id=self.analysis_target_var.get().strip() or None,
+            tn_value=tn_value,
         )
 
     def _validate_inputs(self) -> tuple[str, str, ConversionOptions]:
@@ -1068,6 +1110,7 @@ class Om2BmsGuiApp:
 
     def _run_task(self, mode: str, input_path: str, output_path: str, options: ConversionOptions) -> None:
         try:
+            
             if mode == "zip":
                 count = rename_zip_to_osz(input_path)
                 self.queue.put(("done", f"已把 {count} 个文件从 .zip 改名为 .osz。"))

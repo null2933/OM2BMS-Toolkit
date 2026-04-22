@@ -28,6 +28,7 @@ def convert_single_osu_chart(
         "BG": options.bg,
         "OFFSET": options.offset,
         "JUDGE": options.judge,
+        "TOTAL_MULTIPLIER": getattr(options, "tn_value", 0.2),
     })
     OsuManiaToBMSParser._convertion_options = conversion_options
 
