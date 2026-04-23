@@ -234,12 +234,14 @@ def build_score_entry_from_bms(
         comment = analyzed["comment"]
 
     osu_url = read_osu_url_from_bms(chart_path)
+    if song_info.artist and song_info.subartist:
+        merged_artist = song_info.artist +"/" +song_info.subartist
 
     return {
         "title": merged_title,
         "level": level,
         "eval": 0,
-        "artist": (song_info.artist or "").strip(),
+        "artist": (merged_artist or "").strip(),
         "url": osu_url,
         "url_diff": "",
         "name_diff": "",
