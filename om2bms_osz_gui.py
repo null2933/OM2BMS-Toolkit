@@ -844,12 +844,36 @@ class TableGenTab:
             self.input_var.set(path)
 
     def _select_score_json(self):
+        config_path = Path("default_json_dir.txt")
+
+        initialdir = None
+        initialfile = None
+
+        if config_path.exists():
+            try:
+                saved_path = config_path.read_text(encoding="utf-8-sig").strip()
+                if saved_path:
+                    p = Path(saved_path)
+
+                    if p.suffix.lower() == ".json":
+                        initialdir = str(p.parent)
+                        initialfile = p.name
+                    else:
+                        initialdir = str(p)
+                        initialfile = "score.json"
+            except OSError:
+                pass
+
         path = filedialog.askopenfilename(
             title="选择 score.json",
+            initialdir=initialdir,
+            initialfile=initialfile,
             filetypes=[("JSON 文件", "*.json"), ("所有文件", "*.*")]
         )
+
         if path:
             self.score_json_var.set(path)
+
 
     # ===========================
     # 开始执行
@@ -1164,9 +1188,9 @@ class Om2BmsGuiApp:
         tab_analyzer = ttk.Frame(notebook)
         tab_tablegen = ttk.Frame(notebook)
 
-        notebook.add(tab_converter, text="转谱")
+        notebook.add(tab_converter, text="转谱工具")
         notebook.add(tab_analyzer, text="BMS难度分析")
-        notebook.add(tab_tablegen, text="TABLE GENERATOR")
+        notebook.add(tab_tablegen, text="难易度生成工具")
 
         # ✅ 关键：把 UI 构建交给 class
         ConverterTab(self, tab_converter)

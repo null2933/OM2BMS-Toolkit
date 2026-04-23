@@ -550,8 +550,16 @@ class OsuManiaToBMSParser:
         total_multiplier = OsuManiaToBMSParser._convertion_options.get(
             "TOTAL_MULTIPLIER", 0.2)
         total_value = int(note_count * total_multiplier)
-
         buffer.append(f"#TOTAL {total_value}")
+
+
+        beatmapset_id = str(self.beatmap.beatmap_set_id).strip() if self.beatmap.beatmap_set_id is not None else ""
+        beatmap_id = str(self.beatmap.beatmap_id).strip() if self.beatmap.beatmap_id is not None else ""
+
+        if self.beatmap.beatmap_set_id and self.beatmap.beatmap_id:
+            buffer.append(
+                f"; OSU_URL: https://osu.ppy.sh/beatmapsets/{beatmapset_id}#mania/{beatmap_id}"
+                    )
 
         buffer.append("")
         for hs in self.beatmap.hitsound_names:
@@ -564,6 +572,7 @@ class OsuManiaToBMSParser:
             for e in self.beatmap.float_bpm:
                 buffer.append("#BPM" + str(e[0]) + " " + str(e[1]))
             buffer.append("")
+        
         # BGM FIELD
         buffer.append("*---------------------- EXPANSION FIELD")
         buffer.append("")

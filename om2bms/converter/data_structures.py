@@ -21,6 +21,7 @@ class OsuMania:
         self.version = None
         self.source = None
         self.beatmap_id = None
+        self.beatmap_set_id = None
         self.stagebg = None
 
         self.key_count = None  # originally circle size

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from dataclasses import asdict
 from pathlib import Path
@@ -171,6 +172,26 @@ def _analyze_level_with_service(chart_path: Path) -> str:
         return {"level": "", "comment": ""}
 
 
+_OSU_URL_RE = re.compile(
+    r"^\s*;?\s*OSU_URL\s*:\s*(?P<url>\S+)\s*$",
+    re.IGNORECASE,
+)
+
+
+def read_osu_url_from_bms(bms_path: str | Path) -> str:
+    path = Path(bms_path)
+
+    try:
+        with path.open("r", encoding="utf-8-sig", errors="ignore") as f:
+            for line in f:
+                m = _OSU_URL_RE.match(line)
+                if m:
+                    return m.group("url").strip()
+    except OSError:
+        return ""
+
+    return ""
+
 def build_score_entry_from_bms(
     bms_path: str | Path,
     *,
@@ -212,13 +233,14 @@ def build_score_entry_from_bms(
         level = analyzed["level"]
         comment = analyzed["comment"]
 
+    osu_url = read_osu_url_from_bms(chart_path)
 
     return {
         "title": merged_title,
         "level": level,
         "eval": 0,
         "artist": (song_info.artist or "").strip(),
-        "url": "",
+        "url": osu_url,
         "url_diff": "",
         "name_diff": "",
         "comment": comment,

@@ -333,7 +333,8 @@ class OsuBeatmapReader:
             elif line_property[0] == "BeatmapID":
                 beatmap.beatmap_id = line_property[1].strip()
             elif line_property[0] == "BeatmapSetID":
-                pass
+                beatmap.beatmap_set_id = line_property[1].strip()
+
 
         def is_empty(line):
             """
