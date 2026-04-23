@@ -157,7 +157,7 @@ def _safe_str(value: Any, default: str = "") -> str:
 
 
 def _analyze_level_with_service(chart_path: Path, song_info: object) -> dict[str, str]:
-    ln_ratio_threshold = 0.2  # 判断是否为 LN_Type 依据
+    ln_ratio_threshold = 0.15  # 判断是否为 LN_Type 依据
 
     try:
         if isinstance(song_info, dict):
