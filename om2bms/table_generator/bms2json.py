@@ -166,7 +166,6 @@ def _analyze_level_with_service(chart_path: Path, song_info: object) -> dict[str
             ln_ratio = float(getattr(song_info, "ln_ratio", 0.0) or 0.0)
 
         if ln_ratio > ln_ratio_threshold:
-            print(ln_ratio)
             return {
                 "level": "LN",
                 "comment": "LN",
