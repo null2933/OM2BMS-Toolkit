@@ -14,6 +14,7 @@ class SongInfo:
     total: float
     total_notes: int
     judge: int
+    ln_ratio: float
     md5: Optional[str] = None
     sha256: Optional[str] = None
 

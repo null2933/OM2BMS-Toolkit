@@ -14,6 +14,7 @@ from om2bms.analysis.types import ParsedBMSChart, SongInfo
 MAIN_DATA_PATTERN = re.compile(r"^#(?P<measure>\d{3})(?P<channel>[0-9A-Z]{2}):(?P<data>.+)$", re.IGNORECASE)
 BPM_EXT_PATTERN = re.compile(r"^#BPM(?P<key>[0-9A-Z]{2})\s+(?P<value>.+)$", re.IGNORECASE)
 HEADER_PATTERN = re.compile(r"^#(?P<key>[A-Z][A-Z0-9_]*)\s+(?P<value>.+)$", re.IGNORECASE)
+LN_RATIO_PATTERN = re.compile(r"^;\s*(?:LN_RATIO)\s*:\s*(?P<value>[+-]?\d+(?:\.\d+)?)\s*$",re.IGNORECASE,)
 
 
 @dataclass(frozen=True)
@@ -84,9 +85,14 @@ def _parse_chart_object(chart_object: dict[str, Any]) -> ParsedBMSChart:
             total=float(info.get("total", 200.0)),
             total_notes=int(info.get("total_notes", 0)),
             judge = int(info.get("judge", 3)),
+            ln_ratio=_safe_float(
+                info.get("ln_ratio", info.get("ln_ration", 0.0)),
+                default=0.0,
+            ),
             md5=info.get("md5"),
             sha256=info.get("sha256"),
         )
+
         return ParsedBMSChart(
             timeline_master=[[float(value) for value in row] for row in chart_object["timeline_master"]],
             song_info=song_info,
@@ -99,11 +105,19 @@ def _parse_bms_text(text: str) -> ParsedBMSChart:
     extended_bpms: dict[str, float] = {}
     measure_lengths: dict[int, float] = {}
     timed_events: list[_TimedEvent] = []
+    ln_ratio = 0.0
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("//"):
             continue
+
+        
+        ln_ratio_match = LN_RATIO_PATTERN.match(line)
+        if ln_ratio_match:
+            ln_ratio = _safe_float(ln_ratio_match.group("value"), default=0.0)
+            continue
+
 
         main_match = MAIN_DATA_PATTERN.match(line)
         if main_match:
@@ -164,7 +178,8 @@ def _parse_bms_text(text: str) -> ParsedBMSChart:
         song_last_ms=extracted_notes[-1][0] if extracted_notes else 0.0,
         total=_safe_float(headers.get("total"), default=200.0),
         total_notes=len(extracted_notes),
-        judge = int(headers.get("rank", 3))
+        judge = int(headers.get("rank", 3)),
+        ln_ratio=ln_ratio,
     )
     return ParsedBMSChart(timeline_master=timeline_master, song_info=song_info)
 

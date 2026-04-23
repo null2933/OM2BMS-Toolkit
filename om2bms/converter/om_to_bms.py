@@ -70,6 +70,9 @@ class OsuManiaToBMSParser:
         self.bg_filename = None
         self.output_path = None
         self.failed = False
+        self.note_count = 0
+        self.ln_count = 0
+
         try:
             self.beatmap = OsuBeatmapReader(in_file)
         except OsuGameTypeException:
@@ -100,7 +103,13 @@ class OsuManiaToBMSParser:
         self.get_next_measure(
             music_start_param[0], music_start_param[1], self.beatmap)
 
+        self.write_buffer(self.create_statistics())
+
         OsuManiaToBMSParser._out_file.close()
+
+        # print("\tNotes:", self.note_count)
+        # print("\tLNs:", self.ln_count)
+        # print("\tTotal_Notes:", self.note_count + self.ln_count)
 
         file = os.path.dirname(in_file)
         if OsuManiaToBMSParser._convertion_options["BG"] and self.beatmap.stagebg is not None and \
@@ -297,6 +306,7 @@ class OsuManiaToBMSParser:
             Adds hitobj to measure
             """
             if isinstance(hitobjj_, OsuManiaNote):
+                self.note_count += 1
                 column = hitobjj_.mania_column
                 bmscolumn = OsuManiaToBMSParser._mania_note_to_channel[column]
                 if bmscolumn not in current_measure_:
@@ -306,6 +316,7 @@ class OsuManiaToBMSParser:
                     current_measure_[
                         OsuManiaToBMSParser._mania_note_to_channel[column]].append(hitobjj_)
             elif isinstance(hitobjj_, OsuManiaLongNote):
+                self.ln_count += 1
                 column = hitobjj_.mania_column
                 bmscolumn = OsuManiaToBMSParser._mania_ln_to_channel[column]
                 if bmscolumn not in current_measure_:
@@ -509,6 +520,25 @@ class OsuManiaToBMSParser:
                         2), gcd_, sorted(locations_, key=lambda x: x[0]))
 
             return bms_measure
+    def create_statistics(self) -> List[str]:
+        """
+        Makes statistics field after maindata field
+        """
+        buffer = list([""])
+        buffer = list([""])
+        ln_count = self.ln_count // 2
+        total_count = self.note_count + ln_count
+        ln_ratio = ln_count / total_count if total_count > 0 else 0
+
+        buffer.append("")
+        buffer.append("*---------------------- STATISTICS")
+        buffer.append(f"; LN_COUNT: {ln_count}")
+        buffer.append(f"; NOTE_COUNT: {self.note_count}")
+        buffer.append(f"; TOTAL_COUNT: {total_count}")
+        buffer.append(f"; LN_RATIO: {ln_ratio:.6f}")
+        buffer.append("*---------------------------------")
+
+        return buffer
 
     def create_header(self) -> List[str]:
         """

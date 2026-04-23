@@ -156,20 +156,43 @@ def _safe_str(value: Any, default: str = "") -> str:
     return str(value).strip()
 
 
-def _analyze_level_with_service(chart_path: Path) -> str:
-    service = DifficultyAnalyzerService()
+def _analyze_level_with_service(chart_path: Path, song_info: object) -> dict[str, str]:
+    ln_ratio_threshold = 0.2  # 判断是否为 LN_Type 依据
+
     try:
-        result = service.analyze_path(str(chart_path)) 
+        if isinstance(song_info, dict):
+            ln_ratio = float(song_info.get("ln_ratio", song_info.get("ln_ration", 0.0)) or 0.0)
+        else:
+            ln_ratio = float(getattr(song_info, "ln_ratio", 0.0) or 0.0)
+
+        if ln_ratio > ln_ratio_threshold:
+            print(ln_ratio)
+            return {
+                "level": "LN",
+                "comment": "LN",
+            }
+
+        service = DifficultyAnalyzerService()
+        result = service.analyze_path(str(chart_path))
         if result is None:
             print("Analyze Failed")
-            return ""
+            return {
+                "level": "",
+                "comment": "",
+            }
 
         return {
             "level": _safe_str(result.label, ""),
             "comment": _safe_str(result.display, ""),
         }
-    except Exception:
-        return {"level": "", "comment": ""}
+
+    except Exception as e:
+        print(f"Analyze Failed: {e}")
+        return {
+            "level": "",
+            "comment": "",
+        }
+
 
 
 _OSU_URL_RE = re.compile(
@@ -229,7 +252,7 @@ def build_score_entry_from_bms(
         level = str(custom_level or "").strip()
         comment = ""
     else:
-        analyzed = _analyze_level_with_service(chart_path)
+        analyzed = _analyze_level_with_service(chart_path,song_info)
         level = analyzed["level"]
         comment = analyzed["comment"]
 
