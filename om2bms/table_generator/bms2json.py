@@ -256,8 +256,11 @@ def build_score_entry_from_bms(
         comment = analyzed["comment"]
 
     osu_url = read_osu_url_from_bms(chart_path)
-    if song_info.artist and song_info.subartist:
-        merged_artist = song_info.artist +"/" +song_info.subartist
+    artist = song_info.artist.strip() if song_info.artist else ""
+    subartist = song_info.subartist.strip() if song_info.subartist else ""
+
+    merged_artist = "/".join(x for x in [artist, subartist] if x)
+
 
     return {
         "title": merged_title,
