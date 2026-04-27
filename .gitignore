@@ -6,6 +6,7 @@ __pycache__/
 
 build/
 dist/
+json_results/
 
 # 可选：更精确地排除内部文件
 *.spec
