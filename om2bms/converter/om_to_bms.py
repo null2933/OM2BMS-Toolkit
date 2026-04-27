@@ -103,7 +103,7 @@ class OsuManiaToBMSParser:
         self.get_next_measure(
             music_start_param[0], music_start_param[1], self.beatmap)
 
-        self.write_buffer(self.create_statistics())        
+        # self.write_buffer(self.create_statistics())        
 
         OsuManiaToBMSParser._out_file.close()
 
@@ -535,25 +535,25 @@ class OsuManiaToBMSParser:
                         2), gcd_, sorted(locations_, key=lambda x: x[0]))
 
             return bms_measure
-    def create_statistics(self) -> List[str]:
-        """
-        Makes statistics field after maindata field
-        """
-        buffer = list([""])
-        buffer = list([""])
-        ln_count = self.ln_count // 2
-        total_count = self.note_count + ln_count
-        ln_ratio = ln_count / total_count if total_count > 0 else 0
+    # def create_statistics(self) -> List[str]:
+    #     """
+    #     Makes statistics field after maindata field
+    #     """
+    #     buffer = list([""])
+    #     buffer = list([""])
+    #     ln_count = self.ln_count // 2
+    #     total_count = self.note_count + ln_count
+    #     ln_ratio = ln_count / total_count if total_count > 0 else 0
 
-        buffer.append("")
-        buffer.append("*---------------------- STATISTICS")
-        buffer.append(f"; LN_COUNT: {ln_count}")
-        buffer.append(f"; NOTE_COUNT: {self.note_count}")
-        buffer.append(f"; TOTAL_COUNT: {total_count}")
-        buffer.append(f"; LN_RATIO: {ln_ratio:.6f}")
-        buffer.append("*---------------------------------")
+    #     buffer.append("")
+    #     buffer.append("*---------------------- STATISTICS")
+    #     buffer.append(f"; LN_COUNT: {ln_count}")
+    #     buffer.append(f"; NOTE_COUNT: {self.note_count}")
+    #     buffer.append(f"; TOTAL_COUNT: {total_count}")
+    #     buffer.append(f"; LN_RATIO: {ln_ratio:.6f}")
+    #     buffer.append("*---------------------------------")
 
-        return buffer
+    #     return buffer
 
     def create_header(self) -> List[str]:
         """

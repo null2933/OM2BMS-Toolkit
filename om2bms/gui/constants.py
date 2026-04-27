@@ -4,6 +4,15 @@ from __future__ import annotations
 APP_TITLE = "OM2BMS Toolkit"
 
 
+
+DEFAULT_HITSOUND_ENABLED = False
+DEFAULT_BG_ENABLED = True
+DEFAULT_OFFSET_VALUE = "0"
+DEFAULT_TN_VALUE = "0.2"
+DEFAULT_JUDGE_VALUE = "EASY"
+
+
+
 # ============================================================
 # 判定选项
 # 注意：
@@ -11,9 +20,10 @@ APP_TITLE = "OM2BMS Toolkit"
 # 如果你原来已经有 JUDGE_OPTIONS，直接复制过来即可。
 # ============================================================
 JUDGE_OPTIONS = {
-    "EASY": "EASY",
-    "NORMAL": "NORMAL",
-    "HARD": "HARD",
+    "EASY": 3,
+    "NORMAL": 2,
+    "HARD": 1,
+    "VERYHARD": 0,
 }
 
 

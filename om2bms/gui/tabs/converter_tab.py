@@ -113,45 +113,127 @@ class ConverterTab:
 
         outer = ttk.Frame(parent, style="App.TFrame", padding=12)
         outer.grid(row=0, column=0, sticky="nsew")
-        outer.columnconfigure(0, weight=0)
-        outer.columnconfigure(1, weight=1)
+
+        # 左侧配置区约 65%，右侧日志区约 35%
+        outer.columnconfigure(0, weight=50, uniform="converter")
+        outer.columnconfigure(1, weight=50, uniform="converter")
         outer.rowconfigure(0, weight=1)
 
-        # 左侧滚动区域
-        left_canvas = tk.Canvas(outer, highlightthickness=0)
-        left_scroll = ttk.Scrollbar(outer, orient="vertical", command=left_canvas.yview)
+        # 左侧滚动区域外壳
+        left_area = ttk.Frame(outer, style="App.TFrame")
+        left_area.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        left_area.columnconfigure(0, weight=1)
+        left_area.rowconfigure(0, weight=1)
+
+        left_canvas = tk.Canvas(
+            left_area,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        left_scroll = ttk.Scrollbar(
+            left_area,
+            orient="vertical",
+            command=left_canvas.yview,
+        )
         left_canvas.configure(yscrollcommand=left_scroll.set)
 
-        left_canvas.grid(row=0, column=0, sticky="nsw", padx=(0, 12))
-        left_scroll.grid(row=0, column=0, sticky="nse")
+        left_canvas.grid(row=0, column=0, sticky="nsew")
+        left_scroll.grid(row=0, column=1, sticky="ns")
 
         left = ttk.Frame(left_canvas, style="App.TFrame")
         left_window = left_canvas.create_window((0, 0), window=left, anchor="nw")
 
-        def _on_left_configure(event):
+
+        def _on_left_configure(event=None):
+            """
+            当左侧内容尺寸变化时，更新 Canvas 的可滚动区域。
+            """
             left_canvas.configure(scrollregion=left_canvas.bbox("all"))
 
+
         def _on_canvas_configure(event):
+            """
+            当 Canvas 宽度变化时，让内部 Frame 宽度跟随 Canvas。
+            否则内容可能不会自动撑满左侧区域。
+            """
             left_canvas.itemconfigure(left_window, width=event.width)
+
+
+        def _on_mousewheel(event):
+            """
+            Windows / macOS 鼠标滚轮。
+            Windows: event.delta 通常是 ±120
+            macOS: event.delta 可能是较小的连续值
+            """
+            if event.delta == 0:
+                return
+
+            if abs(event.delta) >= 120:
+                units = int(-1 * (event.delta / 120))
+            else:
+                units = -1 if event.delta > 0 else 1
+
+            left_canvas.yview_scroll(units, "units")
+
+
+        def _on_mousewheel_linux_up(event):
+            """
+            Linux 滚轮向上。
+            """
+            left_canvas.yview_scroll(-1, "units")
+
+
+        def _on_mousewheel_linux_down(event):
+            """
+            Linux 滚轮向下。
+            """
+            left_canvas.yview_scroll(1, "units")
+
+
+        def _bind_mousewheel(event=None):
+            """
+            鼠标进入左侧区域后，启用滚轮控制左侧 Canvas。
+            """
+            left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            left_canvas.bind_all("<Button-4>", _on_mousewheel_linux_up)
+            left_canvas.bind_all("<Button-5>", _on_mousewheel_linux_down)
+
+
+        def _unbind_mousewheel(event=None):
+            """
+            鼠标离开左侧区域后，解除全局滚轮绑定。
+            防止影响右侧日志或其他区域。
+            """
+            left_canvas.unbind_all("<MouseWheel>")
+            left_canvas.unbind_all("<Button-4>")
+            left_canvas.unbind_all("<Button-5>")
+
+
+        def _bind_mousewheel_to_children(widget):
+            """
+            递归给左侧区域的所有子控件绑定 Enter/Leave。
+            这样鼠标放在 Entry、Button、Checkbutton、Combobox 上也能滚动。
+            """
+            widget.bind("<Enter>", _bind_mousewheel, add="+")
+            widget.bind("<Leave>", _unbind_mousewheel, add="+")
+
+            for child in widget.winfo_children():
+                _bind_mousewheel_to_children(child)
+
 
         left.bind("<Configure>", _on_left_configure)
         left_canvas.bind("<Configure>", _on_canvas_configure)
 
-        def _on_mousewheel(event):
-            left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        def _bind_mousewheel(event):
-            left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-        def _unbind_mousewheel(event):
-            left_canvas.unbind_all("<MouseWheel>")
-
-        left_canvas.bind("<Enter>", _bind_mousewheel)
-        left_canvas.bind("<Leave>", _unbind_mousewheel)
-        left.bind("<Enter>", _bind_mousewheel)
-        left.bind("<Leave>", _unbind_mousewheel)
+        # 先绑定当前已存在的主要区域
+        left_area.bind("<Enter>", _bind_mousewheel, add="+")
+        left_area.bind("<Leave>", _unbind_mousewheel, add="+")
+        left_canvas.bind("<Enter>", _bind_mousewheel, add="+")
+        left_canvas.bind("<Leave>", _unbind_mousewheel, add="+")
+        left.bind("<Enter>", _bind_mousewheel, add="+")
+        left.bind("<Leave>", _unbind_mousewheel, add="+")
 
         app.register_theme_canvas(left_canvas)
+
 
         # 右侧日志区域
         right = ttk.Frame(outer, style="App.TFrame")
@@ -332,3 +414,5 @@ class ConverterTab:
         log_actions.columnconfigure(0, weight=1)
 
         ttk.Button(log_actions, text="清空日志", command=app._clear_log).grid(row=0, column=0, sticky="e")
+        _bind_mousewheel_to_children(left_area)
+

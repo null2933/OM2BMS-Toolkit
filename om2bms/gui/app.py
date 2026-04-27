@@ -15,7 +15,14 @@ from om2bms.gui.constants import (
     JUDGE_OPTIONS,
     ANALYSIS_MODE_LABELS,
     ANALYSIS_MODE_VALUE_BY_LABEL,
+    DEFAULT_HITSOUND_ENABLED,
+    DEFAULT_BG_ENABLED,
+    DEFAULT_OFFSET_VALUE,
+    DEFAULT_TN_VALUE,
+    DEFAULT_JUDGE_VALUE,
 )
+
+
 from om2bms.gui.theme import configure_ui, apply_theme
 from om2bms.gui.config_store import load_default_output_dir, save_default_output_dir
 from om2bms.gui.exporters.csv_exporter import export_mapped_dict_rows_to_csv
@@ -49,11 +56,12 @@ class Om2BmsGuiApp:
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar(value=load_default_output_dir())
 
-        self.hitsound_var = tk.BooleanVar(value=True)
-        self.bg_var = tk.BooleanVar(value=True)
-        self.offset_var = tk.StringVar(value="0")
-        self.judge_var = tk.StringVar(value="EASY")
-        self.tn_var = tk.StringVar(value="1.0")
+        self.hitsound_var = tk.BooleanVar(value=DEFAULT_HITSOUND_ENABLED)
+        self.bg_var = tk.BooleanVar(value=DEFAULT_BG_ENABLED)
+        self.offset_var = tk.StringVar(value=DEFAULT_OFFSET_VALUE)
+        self.judge_var = tk.StringVar(value=DEFAULT_JUDGE_VALUE)
+        self.tn_var = tk.StringVar(value=DEFAULT_TN_VALUE)
+
 
         self.analysis_mode_var = tk.StringVar(value=DifficultyAnalysisMode.OFF.value)
         self.analysis_target_var = tk.StringVar()
