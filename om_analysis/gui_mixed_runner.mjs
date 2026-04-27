@@ -173,7 +173,7 @@ function renderBar(ratio, width = 36) {
 function formatPatternBlock(cluster) {
     const pattern = cluster.Pattern ?? "Unknown";
     const bpm = cluster.BPM != null ? `${cluster.BPM} BPM` : "";
-    const amount = cluster.Amount != null ? `${cluster.Amount.toLocaleString()} notes` : "";
+    const amount = cluster.Amount != null ? `${cluster.Amount.toLocaleString()} Amount` : "";
     const mixed = cluster.Mixed ? "[Mixed]" : "";
 
     // 计算主pattern 在所有 clusters 里的相对重要度（用Importance 归一化）
@@ -211,7 +211,7 @@ function buildSummaryText(compact, routeInfo, patternAnalysis) {
 
     // 合并同类型 pattern
     const merged = {};
-    let totalNotes = 0;
+    let totalAmount = 0;
 
     for (const cluster of topFive) {
         const pattern = cluster.Pattern ?? "Unknown";
@@ -219,7 +219,7 @@ function buildSummaryText(compact, routeInfo, patternAnalysis) {
         const bpm = cluster.BPM;
         const specificTypes = cluster.SpecificTypes ?? [];
 
-        totalNotes += amount;
+        totalAmount += amount;
 
         if (!merged[pattern]) {
             merged[pattern] = {
@@ -253,10 +253,10 @@ function buildSummaryText(compact, routeInfo, patternAnalysis) {
             ? `  ${bpmList.join("/")} BPM`
             : "";
 
-        const amountStr = `  ${p.totalAmount.toLocaleString()} notes`;
+        const amountStr = `  ${p.totalAmount.toLocaleString()} Amount`;
 
-        // 计算该 pattern 占总音符的比例
-        const patternRatio = totalNotes > 0 ? p.totalAmount / totalNotes : 0;
+        // 计算该 pattern 占总Amount的比例
+        const patternRatio = totalAmount > 0 ? p.totalAmount / totalAmount : 0;
         const bar = renderBar(patternRatio);
 
         // 计算 SpecificTypes 占比（基于该 pattern 内部）
