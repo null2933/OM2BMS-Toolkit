@@ -1,0 +1,23 @@
+{
+  "include_missing": true,
+  "missing_value": null,
+  "fields": {
+    "derived.title": "title",
+    "derived.artist": "artist",
+    "derived.keys": "keys",
+    "derived.type": "type",
+    "derived.sunny_sr": "sunny_sr",
+    "derived.bms_difficulty_display": "bms_difficulty",
+    "derived.dan_estimate": "dan_estimate",
+    "derived.bms_difficulty_label": "bms_difficulty_label",
+    "derived.osu_url": "osu_url",
+    "derived.md5": "md5",
+    "derived.sha256": "sha256",
+    "derived.total_notes": "total_notes",
+    "derived.song_length": "song_length",
+    "derived.ln_ratio": "ln_ratio",
+    "derived.total": "total",
+    "derived.judge": "judge",
+    "derived.patterns": "patterns"
+  }
+}

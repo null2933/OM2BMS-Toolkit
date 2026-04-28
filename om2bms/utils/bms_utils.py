@@ -354,8 +354,6 @@ def should_run_bms_after_mixed(
         4. enable_bms_analysis=False 且 output_bms=False 时，完全跳过 BMS。
     """
 
-    print("debug: determining whether to run BMS analysis, data:", data)
-
     route_mode = get_route_mode_func(data)
 
     # 是否执行 BMS 难度分析

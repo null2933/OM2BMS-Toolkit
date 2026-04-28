@@ -15,9 +15,14 @@ RUNNER_FILE_DEFAULT = (
 
 DEFAULT_BMS_DIR_FILE = PROJECT_ROOT_DEFAULT / "default_bms_dir.txt"
 
+FINAL_RESULT_MAPPING_CONFIG_DEFAULT = (
+    PROJECT_ROOT_DEFAULT
+    / "config"
+    / "final_result_mapping.json"
+)
+
 TOGGLE_NORMAL_STYLE = "Choice.TButton"
 TOGGLE_SELECTED_STYLE = "SelectedChoice.TButton"
-
 
 
 def load_default_bms_dir():
@@ -39,21 +44,49 @@ class MixedAnalysisTab:
 
         self.worker = None
 
+        # 输入模式：file / folder
+        self.input_mode_var = tk.StringVar(value="file")
+
+        # 单文件输入
         self.osu_file_var = tk.StringVar(value="")
+
+        # 文件夹批量输入
+        self.input_dir_var = tk.StringVar(value="")
+
+        # JSON 输出目录
         self.output_dir_var = tk.StringVar(
             value=str(PROJECT_ROOT_DEFAULT / "json_results")
         )
 
-        # 单按钮开关：按下亮起，再按熄灭
+        # 批量/单文件都可以开启合并
+        self.merge_json_results_var = tk.BooleanVar(value=True)
+
+        # BMS 选项
         self.enable_bms_analysis_var = tk.BooleanVar(value=True)
         self.output_bms_var = tk.BooleanVar(value=False)
-
         self.bms_output_dir_var = tk.StringVar(value=load_default_bms_dir())
+
+        # 控件引用
+        self.file_mode_button = None
+        self.folder_mode_button = None
+
+        self.input_file_entry = None
+        self.input_file_button = None
+
+        self.input_dir_entry = None
+        self.input_dir_button = None
+
+        self.merge_json_results_button = None
 
         self.enable_bms_analysis_button = None
         self.output_bms_button = None
         self.bms_output_dir_entry = None
         self.bms_output_dir_button = None
+
+        self.start_button = None
+        self.stop_button = None
+        self.clear_button = None
+        self.log_text = None
 
         self.build_ui(parent)
 
@@ -100,26 +133,105 @@ class MixedAnalysisTab:
         row = 0
         pad_y = 7
 
+        # --------------------------------------------------------------
+        # 输入模式
+        # --------------------------------------------------------------
+        ttk.Label(
+            card,
+            text="输入模式:",
+            style="App.TLabel",
+        ).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=pad_y)
+
+        input_mode_frame = ttk.Frame(card, style="App.TFrame")
+        input_mode_frame.grid(
+            row=row,
+            column=1,
+            columnspan=2,
+            sticky="ew",
+            pady=pad_y,
+        )
+
+        self.file_mode_button = ttk.Button(
+            input_mode_frame,
+            text="单文件",
+            command=lambda: self.set_input_mode("file"),
+        )
+        self.file_mode_button.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.folder_mode_button = ttk.Button(
+            input_mode_frame,
+            text="文件夹批量",
+            command=lambda: self.set_input_mode("folder"),
+        )
+        self.folder_mode_button.pack(side=tk.LEFT, padx=(0, 6))
+
+        row += 1
+
+        # --------------------------------------------------------------
+        # 单文件输入
+        # --------------------------------------------------------------
         ttk.Label(
             card,
             text=".osu / .osz 文件:",
             style="App.TLabel",
         ).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=pad_y)
 
-        ttk.Entry(
+        self.input_file_entry = ttk.Entry(
             card,
             textvariable=self.osu_file_var,
-        ).grid(row=row, column=1, sticky="ew", padx=(0, 8), pady=pad_y)
+        )
+        self.input_file_entry.grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            padx=(0, 8),
+            pady=pad_y,
+        )
 
-        ttk.Button(
+        self.input_file_button = ttk.Button(
             card,
             text="选择",
             command=self.choose_osu_file,
             width=10,
-        ).grid(row=row, column=2, sticky="e", pady=pad_y)
+        )
+        self.input_file_button.grid(row=row, column=2, sticky="e", pady=pad_y)
 
         row += 1
 
+        # --------------------------------------------------------------
+        # 文件夹批量输入
+        # --------------------------------------------------------------
+        ttk.Label(
+            card,
+            text="批量文件夹:",
+            style="App.TLabel",
+        ).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=pad_y)
+
+        self.input_dir_entry = ttk.Entry(
+            card,
+            textvariable=self.input_dir_var,
+        )
+        self.input_dir_entry.grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            padx=(0, 8),
+            pady=pad_y,
+        )
+
+        self.input_dir_button = ttk.Button(
+            card,
+            text="选择",
+            command=self.choose_input_dir,
+            width=10,
+        )
+        self.input_dir_button.grid(row=row, column=2, sticky="e", pady=pad_y)
+
+        row += 1
+
+        # --------------------------------------------------------------
+        # JSON 输出目录
+        # --------------------------------------------------------------
         ttk.Label(
             card,
             text="JSON 保存目录:",
@@ -140,10 +252,38 @@ class MixedAnalysisTab:
 
         row += 1
 
-        # BMS 开关：单按钮按下亮起，再按熄灭
+        # --------------------------------------------------------------
+        # JSON 合并
+        # --------------------------------------------------------------
         ttk.Label(
             card,
-            text="BMS 选项",
+            text="JSON 合并:",
+            style="App.TLabel",
+        ).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=pad_y)
+
+        merge_frame = ttk.Frame(card, style="App.TFrame")
+        merge_frame.grid(
+            row=row,
+            column=1,
+            columnspan=2,
+            sticky="ew",
+            pady=pad_y,
+        )
+
+        self.merge_json_results_button = self._register_toggle_button(
+            merge_frame,
+            self.merge_json_results_var,
+            "合并所有结果",
+        )
+
+        row += 1
+
+        # --------------------------------------------------------------
+        # BMS 开关
+        # --------------------------------------------------------------
+        ttk.Label(
+            card,
+            text="BMS 选项:",
             style="App.TLabel",
         ).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=pad_y)
 
@@ -172,7 +312,9 @@ class MixedAnalysisTab:
 
         row += 1
 
+        # --------------------------------------------------------------
         # BMS 输出目录
+        # --------------------------------------------------------------
         ttk.Label(
             card,
             text="BMS 输出目录:",
@@ -218,8 +360,12 @@ class MixedAnalysisTab:
             pady=(10, 0),
         )
 
+        self.update_input_mode_state()
         self.update_bms_controls_state()
 
+        # --------------------------------------------------------------
+        # 操作
+        # --------------------------------------------------------------
         action_card = ttk.LabelFrame(
             parent,
             text="操作",
@@ -253,6 +399,9 @@ class MixedAnalysisTab:
         )
         self.clear_button.grid(row=0, column=2, sticky="ew")
 
+        # --------------------------------------------------------------
+        # 说明
+        # --------------------------------------------------------------
         info_card = ttk.LabelFrame(
             parent,
             text="说明",
@@ -264,11 +413,13 @@ class MixedAnalysisTab:
         info_text = (
             "1. 支持选择单个 .osu 文件。\n"
             "2. 支持选择 .osz 包，会自动解压并分析其中所有 .osu。\n"
-            "3. 分析结果会保存为 JSON。\n"
-            "4. summaryText 只显示在日志中，不写入 JSON。\n"
-            "5. Node runner 固定使用 om_analysis/gui_mixed_runner.mjs。\n"
-            "6. 默认启用 BMS 分析，但默认不输出 BMS 文件。\n"
-            "7. BMS 输出目录默认读取 default_bms_dir.txt。"
+            "3. 支持选择文件夹，批量分析其中所有 .osu / .osz。\n"
+            "4. 分析结果会保存为 JSON。\n"
+            "5. 开启 JSON 合并后，会额外输出 merged_results.json。\n"
+            "6. summaryText 只显示在日志中，不写入 JSON。\n"
+            "7. Node runner 固定使用 om_analysis/gui_mixed_runner.mjs。\n"
+            "8. 默认启用 BMS 分析，但默认不输出 BMS 文件。\n"
+            "9. BMS 输出目录默认读取 default_bms_dir.txt。"
         )
 
         ttk.Label(
@@ -328,6 +479,55 @@ class MixedAnalysisTab:
         if command:
             command()
 
+    def set_input_mode(self, mode: str):
+        if mode not in {"file", "folder"}:
+            return
+
+        self.input_mode_var.set(mode)
+        self.update_input_mode_state()
+
+    def update_input_mode_state(self):
+        mode = self.input_mode_var.get()
+
+        file_enabled = mode == "file"
+        folder_enabled = mode == "folder"
+
+        try:
+            if self.input_file_entry is not None:
+                self.input_file_entry.configure(
+                    state="normal" if file_enabled else "disabled"
+                )
+
+            if self.input_file_button is not None:
+                self.input_file_button.configure(
+                    state="normal" if file_enabled else "disabled"
+                )
+
+            if self.input_dir_entry is not None:
+                self.input_dir_entry.configure(
+                    state="normal" if folder_enabled else "disabled"
+                )
+
+            if self.input_dir_button is not None:
+                self.input_dir_button.configure(
+                    state="normal" if folder_enabled else "disabled"
+                )
+
+            if self.file_mode_button is not None:
+                self.file_mode_button.configure(
+                    style=TOGGLE_SELECTED_STYLE if file_enabled else TOGGLE_NORMAL_STYLE
+                )
+
+            if self.folder_mode_button is not None:
+                self.folder_mode_button.configure(
+                    style=TOGGLE_SELECTED_STYLE
+                    if folder_enabled
+                    else TOGGLE_NORMAL_STYLE
+                )
+
+        except Exception:
+            pass
+
     def update_bms_controls_state(self):
         enable_bms = bool(self.enable_bms_analysis_var.get())
         output_bms = bool(self.output_bms_var.get())
@@ -373,6 +573,15 @@ class MixedAnalysisTab:
         if path:
             self.osu_file_var.set(path)
 
+    def choose_input_dir(self):
+        path = filedialog.askdirectory(
+            title="选择包含 .osu / .osz 的文件夹",
+            initialdir=self.input_dir_var.get() or str(PROJECT_ROOT_DEFAULT),
+        )
+
+        if path:
+            self.input_dir_var.set(path)
+
     def choose_output_dir(self):
         path = filedialog.askdirectory(
             title="选择 JSON 保存目录",
@@ -400,19 +609,47 @@ class MixedAnalysisTab:
             messagebox.showwarning("提示", "已有分析任务正在运行")
             return
 
+        input_mode = self.input_mode_var.get()
+
         input_file_text = self.osu_file_var.get().strip()
+        input_dir_text = self.input_dir_var.get().strip()
         output_dir_text = self.output_dir_var.get().strip()
 
-        if not input_file_text:
-            messagebox.showerror("错误", "请选择 .osu 或 .osz 文件")
+        if input_mode == "file":
+            if not input_file_text:
+                messagebox.showerror("错误", "请选择 .osu 或 .osz 文件")
+                return
+
+        elif input_mode == "folder":
+            if not input_dir_text:
+                messagebox.showerror("错误", "请选择包含 .osu / .osz 的文件夹")
+                return
+
+        else:
+            messagebox.showerror("错误", f"未知输入模式: {input_mode}")
             return
 
         if not output_dir_text:
             messagebox.showerror("错误", "请选择 JSON 保存目录")
             return
 
-        input_file = Path(input_file_text)
+        input_file = Path(input_file_text) if input_file_text else None
+        input_dir = Path(input_dir_text) if input_dir_text else None
         output_dir = Path(output_dir_text)
+
+        if input_mode == "file":
+            if input_file is None or not input_file.exists():
+                messagebox.showerror("错误", f"输入文件不存在:\n{input_file}")
+                return
+
+            if input_file.suffix.lower() not in {".osu", ".osz"}:
+                messagebox.showerror("错误", "请选择 .osu 或 .osz 文件")
+                return
+
+        if input_mode == "folder":
+            if input_dir is None or not input_dir.exists() or not input_dir.is_dir():
+                messagebox.showerror("错误", f"输入文件夹不存在:\n{input_dir}")
+                return
 
         enable_bms_analysis = bool(self.enable_bms_analysis_var.get())
         output_bms = bool(self.output_bms_var.get())
@@ -424,11 +661,31 @@ class MixedAnalysisTab:
             return
 
         bms_output_dir = Path(bms_output_dir_text) if bms_output_dir_text else None
+        is_batch_mode = input_mode == "folder"
+
+        # 批处理时静默过程日志；单文件时保留详细日志
+        quiet_analysis_logs = is_batch_mode
+
+        # 批处理时不保存单个 JSON；单文件时保存单个 JSON
+        save_individual_json = not is_batch_mode
+        # 批处理时如果不保存单个 JSON，则必须合并，否则没有输出
+        merge_json_results = bool(self.merge_json_results_var.get())
+        if is_batch_mode:
+            merge_json_results = True
 
         self.worker = MixedAnalysisWorker(
             project_root=PROJECT_ROOT_DEFAULT,
             runner_file=RUNNER_FILE_DEFAULT,
+            final_result_mapping_config_path=FINAL_RESULT_MAPPING_CONFIG_DEFAULT,
+
             input_file=input_file,
+            input_dir=input_dir,
+            batch_mode=is_batch_mode,
+            merge_json_results=merge_json_results,
+
+            save_individual_json=save_individual_json,
+            quiet_analysis_logs=quiet_analysis_logs,
+
             output_dir=output_dir,
             enable_bms_analysis=enable_bms_analysis,
             output_bms=output_bms,
@@ -436,6 +693,8 @@ class MixedAnalysisTab:
             log_callback=self.after_log,
             finish_callback=self.on_worker_finished,
         )
+
+
 
         self.set_running_ui(True)
         started = self.worker.start()
