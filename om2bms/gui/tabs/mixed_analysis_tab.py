@@ -44,7 +44,7 @@ class MixedAnalysisTab:
 
         self.worker = None
 
-        # 输入模式：file / folder
+        # 输入模式：file / folder / info
         self.input_mode_var = tk.StringVar(value="file")
 
         # 单文件输入
@@ -52,6 +52,9 @@ class MixedAnalysisTab:
 
         # 文件夹批量输入
         self.input_dir_var = tk.StringVar(value="")
+
+        # 下载器 beatmap_info.json 输入
+        self.info_file_var = tk.StringVar(value="")
 
         # JSON 输出目录
         self.output_dir_var = tk.StringVar(
@@ -69,12 +72,16 @@ class MixedAnalysisTab:
         # 控件引用
         self.file_mode_button = None
         self.folder_mode_button = None
+        self.info_mode_button = None
 
         self.input_file_entry = None
         self.input_file_button = None
 
         self.input_dir_entry = None
         self.input_dir_button = None
+
+        self.info_file_entry = None
+        self.info_file_button = None
 
         self.merge_json_results_button = None
 
@@ -165,6 +172,13 @@ class MixedAnalysisTab:
         )
         self.folder_mode_button.pack(side=tk.LEFT, padx=(0, 6))
 
+        self.info_mode_button = ttk.Button(
+            input_mode_frame,
+            text="下载器 JSON",
+            command=lambda: self.set_input_mode("info"),
+        )
+        self.info_mode_button.pack(side=tk.LEFT, padx=(0, 6))
+
         row += 1
 
         # --------------------------------------------------------------
@@ -226,6 +240,37 @@ class MixedAnalysisTab:
             width=10,
         )
         self.input_dir_button.grid(row=row, column=2, sticky="e", pady=pad_y)
+
+        row += 1
+
+        # --------------------------------------------------------------
+        # 下载器 beatmap_info.json 输入
+        # --------------------------------------------------------------
+        ttk.Label(
+            card,
+            text="下载器 JSON:",
+            style="App.TLabel",
+        ).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=pad_y)
+
+        self.info_file_entry = ttk.Entry(
+            card,
+            textvariable=self.info_file_var,
+        )
+        self.info_file_entry.grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            padx=(0, 8),
+            pady=pad_y,
+        )
+
+        self.info_file_button = ttk.Button(
+            card,
+            text="选择",
+            command=self.choose_info_file,
+            width=10,
+        )
+        self.info_file_button.grid(row=row, column=2, sticky="e", pady=pad_y)
 
         row += 1
 
@@ -414,12 +459,13 @@ class MixedAnalysisTab:
             "1. 支持选择单个 .osu 文件。\n"
             "2. 支持选择 .osz 包，会自动解压并分析其中所有 .osu。\n"
             "3. 支持选择文件夹，批量分析其中所有 .osu / .osz。\n"
-            "4. 分析结果会保存为 JSON。\n"
-            "5. 开启 JSON 合并后，会额外输出 merged_results.json。\n"
-            "6. summaryText 只显示在日志中，不写入 JSON。\n"
-            "7. Node runner 固定使用 om_analysis/gui_mixed_runner.mjs。\n"
-            "8. 默认启用 BMS 分析，但默认不输出 BMS 文件。\n"
-            "9. BMS 输出目录默认读取 default_bms_dir.txt。"
+            "4. 支持选择下载器 beatmap_info.json，根据其中 file_path 定位 .osz。\n"
+            "5. 分析结果会保存为 JSON。\n"
+            "6. 开启 JSON 合并后，会额外输出 merged_results.json。\n"
+            "7. summaryText 只显示在日志中，不写入 JSON。\n"
+            "8. Node runner 固定使用 om_analysis/gui_mixed_runner.mjs。\n"
+            "9. 默认启用 BMS 分析，但默认不输出 BMS 文件。\n"
+            "10. BMS 输出目录默认读取 default_bms_dir.txt。"
         )
 
         ttk.Label(
@@ -480,7 +526,7 @@ class MixedAnalysisTab:
             command()
 
     def set_input_mode(self, mode: str):
-        if mode not in {"file", "folder"}:
+        if mode not in {"file", "folder", "info"}:
             return
 
         self.input_mode_var.set(mode)
@@ -491,6 +537,7 @@ class MixedAnalysisTab:
 
         file_enabled = mode == "file"
         folder_enabled = mode == "folder"
+        info_enabled = mode == "info"
 
         try:
             if self.input_file_entry is not None:
@@ -513,6 +560,16 @@ class MixedAnalysisTab:
                     state="normal" if folder_enabled else "disabled"
                 )
 
+            if self.info_file_entry is not None:
+                self.info_file_entry.configure(
+                    state="normal" if info_enabled else "disabled"
+                )
+
+            if self.info_file_button is not None:
+                self.info_file_button.configure(
+                    state="normal" if info_enabled else "disabled"
+                )
+
             if self.file_mode_button is not None:
                 self.file_mode_button.configure(
                     style=TOGGLE_SELECTED_STYLE if file_enabled else TOGGLE_NORMAL_STYLE
@@ -520,9 +577,12 @@ class MixedAnalysisTab:
 
             if self.folder_mode_button is not None:
                 self.folder_mode_button.configure(
-                    style=TOGGLE_SELECTED_STYLE
-                    if folder_enabled
-                    else TOGGLE_NORMAL_STYLE
+                    style=TOGGLE_SELECTED_STYLE if folder_enabled else TOGGLE_NORMAL_STYLE
+                )
+
+            if self.info_mode_button is not None:
+                self.info_mode_button.configure(
+                    style=TOGGLE_SELECTED_STYLE if info_enabled else TOGGLE_NORMAL_STYLE
                 )
 
         except Exception:
@@ -582,6 +642,19 @@ class MixedAnalysisTab:
         if path:
             self.input_dir_var.set(path)
 
+    def choose_info_file(self):
+        path = filedialog.askopenfilename(
+            title="选择下载器 beatmap_info.json",
+            filetypes=[
+                ("beatmap_info json", "beatmap_info.json"),
+                ("json files", "*.json"),
+                ("All files", "*.*"),
+            ],
+        )
+
+        if path:
+            self.info_file_var.set(path)
+
     def choose_output_dir(self):
         path = filedialog.askdirectory(
             title="选择 JSON 保存目录",
@@ -613,6 +686,7 @@ class MixedAnalysisTab:
 
         input_file_text = self.osu_file_var.get().strip()
         input_dir_text = self.input_dir_var.get().strip()
+        info_file_text = self.info_file_var.get().strip()
         output_dir_text = self.output_dir_var.get().strip()
 
         if input_mode == "file":
@@ -625,6 +699,11 @@ class MixedAnalysisTab:
                 messagebox.showerror("错误", "请选择包含 .osu / .osz 的文件夹")
                 return
 
+        elif input_mode == "info":
+            if not info_file_text:
+                messagebox.showerror("错误", "请选择下载器 beatmap_info.json")
+                return
+
         else:
             messagebox.showerror("错误", f"未知输入模式: {input_mode}")
             return
@@ -635,6 +714,7 @@ class MixedAnalysisTab:
 
         input_file = Path(input_file_text) if input_file_text else None
         input_dir = Path(input_dir_text) if input_dir_text else None
+        input_info_file = Path(info_file_text) if info_file_text else None
         output_dir = Path(output_dir_text)
 
         if input_mode == "file":
@@ -646,9 +726,25 @@ class MixedAnalysisTab:
                 messagebox.showerror("错误", "请选择 .osu 或 .osz 文件")
                 return
 
-        if input_mode == "folder":
+        elif input_mode == "folder":
             if input_dir is None or not input_dir.exists() or not input_dir.is_dir():
                 messagebox.showerror("错误", f"输入文件夹不存在:\n{input_dir}")
+                return
+
+        elif input_mode == "info":
+            if (
+                input_info_file is None
+                or not input_info_file.exists()
+                or not input_info_file.is_file()
+            ):
+                messagebox.showerror(
+                    "错误",
+                    f"beatmap_info.json 不存在:\n{input_info_file}",
+                )
+                return
+
+            if input_info_file.suffix.lower() != ".json":
+                messagebox.showerror("错误", "请选择 .json 文件")
                 return
 
         enable_bms_analysis = bool(self.enable_bms_analysis_var.get())
@@ -661,13 +757,15 @@ class MixedAnalysisTab:
             return
 
         bms_output_dir = Path(bms_output_dir_text) if bms_output_dir_text else None
-        is_batch_mode = input_mode == "folder"
+
+        is_batch_mode = input_mode in {"folder", "info"}
 
         # 批处理时静默过程日志；单文件时保留详细日志
         quiet_analysis_logs = is_batch_mode
 
         # 批处理时不保存单个 JSON；单文件时保存单个 JSON
         save_individual_json = not is_batch_mode
+
         # 批处理时如果不保存单个 JSON，则必须合并，否则没有输出
         merge_json_results = bool(self.merge_json_results_var.get())
         if is_batch_mode:
@@ -680,6 +778,9 @@ class MixedAnalysisTab:
 
             input_file=input_file,
             input_dir=input_dir,
+            input_info_file=input_info_file,
+            input_mode=input_mode,
+
             batch_mode=is_batch_mode,
             merge_json_results=merge_json_results,
 
@@ -693,8 +794,6 @@ class MixedAnalysisTab:
             log_callback=self.after_log,
             finish_callback=self.on_worker_finished,
         )
-
-
 
         self.set_running_ui(True)
         started = self.worker.start()
