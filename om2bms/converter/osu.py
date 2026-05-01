@@ -250,10 +250,10 @@ class OsuBeatmapReader:
             line_property = get_line_property(line)
             if line_property[0] == "CircleSize":
                 keycount = int(line_property[1])
-                if keycount == 7 or keycount == 8:
+                if keycount == 7:            #delete support for 8key
                     beatmap.key_count = keycount
                 else:
-                    raise OsuParseException("Only 7k/8k files are supported!")
+                    raise OsuParseException("Only 7k files are supported!")
             elif line_property[0] == "HPDrainRate":
                 pass
             elif line_property[0] == "OverallDifficulty":

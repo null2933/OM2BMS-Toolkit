@@ -10,6 +10,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path, PureWindowsPath
 from typing import Any
+import traceback
 
 from om2bms.pipeline.service import ConversionPipelineService
 from om2bms.pipeline.types import ConversionOptions, DifficultyAnalysisMode
@@ -247,12 +248,6 @@ class MixedAnalysisWorker:
     ) -> str:
         """
         从 beatmap_info.json 的单条记录中提取 BMS 输出子目录名。
-
-        示例:
-            osu_maps\\9650304 [aci]\\1526196 Camellia - Kisaragi.osz
-
-        返回:
-            9650304 [aci]
         """
 
         if not isinstance(record, dict):
@@ -328,81 +323,81 @@ class MixedAnalysisWorker:
         self,
         osu_file: Path,
         analyze_bms: bool,
+        skip_output_bms:bool,
         *,
         source_meta: dict[str, Any] | None = None,
     ) -> tuple[bool, dict[str, Any]]:
         """
         BMS 转换入口。
-
-        重要规则：
-            只有 info 模式才把 BMS 输出到子目录。
-            其他模式仍然输出到 self.bms_output_dir。
-
-        info 模式示例:
-            self.bms_output_dir:
-                E:/_BMS_/SONGS/OSU_PACK_QUEUE/test
-
-            beatmap_info file_path:
-                osu_maps\\9650304 [aci]\\1526196 Camellia - Kisaragi.osz
-
-            最终 bms_output_dir:
-                E:/_BMS_/SONGS/OSU_PACK_QUEUE/test/9650304 [aci]
         """
 
-        base_bms_output_dir = Path(self.bms_output_dir)
-        final_bms_output_dir = base_bms_output_dir
-
-        current_mode = getattr(self, "current_mode", None)
-
-        # ------------------------------------------------------------
-        # 只有 info 模式启用子目录输出
-        # ------------------------------------------------------------
-        if current_mode == "info":
-            subdir = self.get_info_mode_bms_output_subdir_from_source_meta(
-                source_meta
-            )
-
-            if subdir:
-                final_bms_output_dir = base_bms_output_dir / subdir
-                self.log(f"[BMS] info 模式输出子目录: {subdir}")
-            else:
-                self.log("[BMS] info 模式未取得输出子目录，使用基础 BMS 输出目录")
-
-        else:
-            # 其他模式明确不追加子目录
-            self.log("[BMS] 非 info 模式，使用基础 BMS 输出目录")
+        final_bms_output_dir = Path(self.bms_output_dir)
 
         try:
             final_bms_output_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
             self.log(f"[BMS WARN] 创建 BMS 输出目录失败: {final_bms_output_dir}")
             self.log(f"[BMS WARN] {exc}")
-            # 目录创建失败时，回退到基础目录
-            final_bms_output_dir = base_bms_output_dir
+
+            final_bms_output_dir = Path(self.output_dir)
             final_bms_output_dir.mkdir(parents=True, exist_ok=True)
 
         self.log(f"[BMS] 输出目录: {final_bms_output_dir}")
+        print(final_bms_output_dir)
+        if skip_output_bms:
+            output_bms =  False
+        else:
+            output_bms = self.output_bms
 
         return bms_utils.run_bms_convert_and_analysis(
             osu_file=osu_file,
             analyze_bms=analyze_bms,
-            output_bms=self.output_bms,
+            output_bms = False,
             output_dir=self.output_dir,
             bms_output_dir=final_bms_output_dir,
             log_func=self.log,
         )
 
-
-
-    def build_bms_conversion_options(
+    def run_bms_convert_osz_and_analysis(
         self,
-        osu_file: Path,
+        osz_file: Path,
         analyze_bms: bool,
-    ) -> ConversionOptions:
-        return bms_utils.build_bms_conversion_options(
-            osu_file=osu_file,
+        *,
+        output_folder_name: str | None = None,
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        info 模式专用：
+        对整个 .osz 执行一次 BMS 转换。
+        """
+
+        base_bms_output_dir = Path(self.bms_output_dir)
+
+        try:
+            base_bms_output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            self.log(f"[BMS WARN] 创建 BMS 基础输出目录失败: {base_bms_output_dir}")
+            self.log(f"[BMS WARN] {exc}")
+            base_bms_output_dir = Path(self.output_dir)
+            base_bms_output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.log(f"[BMS] OSZ 输出父目录: {base_bms_output_dir}")
+        if output_folder_name:
+            self.log(f"[BMS] OSZ 输出子目录: {output_folder_name}")
+            self.log(f"[BMS] OSZ 最终输出目录: {base_bms_output_dir / output_folder_name}")
+        else:
+            self.log("[BMS] OSZ 未指定输出子目录，将使用 osz 文件名")
+
+        return bms_utils.run_bms_convert_osz_and_analysis(
+            osz_file=osz_file,
             analyze_bms=analyze_bms,
+            output_bms=self.output_bms,
+            output_dir=self.output_dir,
+            bms_output_dir=base_bms_output_dir,
+            output_folder_name=output_folder_name,
+            log_func=self.log,
         )
+
+
 
     def print_bms_conversion_result(self, result, analyze_bms: bool):
         return bms_utils.log_bms_conversion_result(
@@ -488,6 +483,7 @@ class MixedAnalysisWorker:
                 save_file=self.save_individual_json,
                 print_summary=not self.quiet_analysis_logs,
                 log_result=self.save_individual_json and not self.quiet_analysis_logs,
+                skip_output_bms= True
             )
 
             if mixed_ok:
@@ -662,6 +658,179 @@ class MixedAnalysisWorker:
     # ------------------------------------------------------------------
     # beatmap_info.json flow
     # ------------------------------------------------------------------
+    def parse_datetime_utc(value: Any) -> datetime | None:
+        """
+        解析 ISO 时间字符串为 UTC aware datetime。
+
+        支持：
+            2025-08-06T08:29:46Z
+            2026-04-30T06:54:48.425322+00:00
+        """
+
+        if not value:
+            return None
+
+        text = str(value).strip()
+        if not text:
+            return None
+
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+
+        try:
+            dt = datetime.fromisoformat(text)
+        except Exception:
+            return None
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+
+        return dt.astimezone(timezone.utc)
+
+    def get_source_beatmapset_id(source_meta: dict[str, Any] | None) -> str:
+        if not isinstance(source_meta, dict):
+            return ""
+
+        value = (
+            source_meta.get("beatmapset_id")
+            or source_meta.get("BeatmapSetID")
+            or source_meta.get("beatmapsetId")
+            or ""
+        )
+
+        return str(value).strip()
+
+    def get_beatmapset_id_from_result(item: dict[str, Any]) -> str:
+        if not isinstance(item, dict):
+            return ""
+
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        value = (
+            item.get("beatmapset_id")
+            or item.get("source_beatmapset_id")
+            or metadata.get("beatmapset_id")
+            or metadata.get("BeatmapSetID")
+            or metadata.get("md5")  # 如果你准备把 metadata.md5 写成 beatmapset_id，可兼容这里
+            or ""
+        )
+
+        return str(value).strip()
+
+
+    def replace_final_result_by_beatmapset_id(
+        self,
+        beatmapset_id: str,
+        new_items: list[dict[str, Any]],
+    ) -> None:
+        beatmapset_id = str(beatmapset_id).strip()
+
+        if not beatmapset_id:
+            self.log("[FINAL WARN] beatmapset_id 为空，无法执行替换")
+            return
+
+        final_result_path = Path(self.output_dir) / "final_result.json"
+        final_result_path.parent.mkdir(parents=True, exist_ok=True)
+
+        import json
+
+        old_data: Any = []
+
+        if final_result_path.exists():
+            try:
+                with final_result_path.open("r", encoding="utf-8") as f:
+                    old_data = json.load(f)
+            except Exception as exc:
+                self.log(f"[FINAL WARN] 读取 final_result.json 失败，将重建: {exc}")
+                old_data = []
+
+        # 兼容 list / dict(results)
+        use_dict_wrapper = False
+        wrapper_data: dict[str, Any] | None = None
+
+        if isinstance(old_data, list):
+            old_records = old_data
+        elif isinstance(old_data, dict):
+            wrapper_data = old_data
+            if isinstance(old_data.get("results"), list):
+                old_records = old_data["results"]
+                use_dict_wrapper = True
+            elif isinstance(old_data.get("items"), list):
+                old_records = old_data["items"]
+                use_dict_wrapper = True
+            else:
+                old_records = []
+                old_data["results"] = old_records
+                use_dict_wrapper = True
+        else:
+            old_records = []
+
+        kept_records: list[dict[str, Any]] = []
+        removed_count = 0
+
+        for item in old_records:
+            if not isinstance(item, dict):
+                continue
+
+            item_beatmapset_id = get_beatmapset_id_from_result(item)
+
+            if item_beatmapset_id == beatmapset_id:
+                removed_count += 1
+                continue
+
+            kept_records.append(item)
+
+        # 确保新结果写入 beatmapset_id / analyzer_version
+        normalized_new_items: list[dict[str, Any]] = []
+
+        for item in new_items:
+            if not isinstance(item, dict):
+                continue
+
+            item["beatmapset_id"] = beatmapset_id
+            item["analyzer_version"] = self.analyzer_version
+
+            metadata = item.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+                item["metadata"] = metadata
+
+            metadata["beatmapset_id"] = beatmapset_id
+            metadata["analyzer_version"] = self.analyzer_version
+
+            # 如果你明确要 metadata.md5 改成 beatmapset_id：
+            metadata["md5"] = beatmapset_id
+
+            normalized_new_items.append(item)
+
+        final_records = kept_records + normalized_new_items
+
+        if use_dict_wrapper and wrapper_data is not None:
+            if isinstance(wrapper_data.get("results"), list):
+                wrapper_data["results"] = final_records
+            elif isinstance(wrapper_data.get("items"), list):
+                wrapper_data["items"] = final_records
+            else:
+                wrapper_data["results"] = final_records
+
+            output_data = wrapper_data
+        else:
+            output_data = final_records
+
+        tmp_path = final_result_path.with_suffix(".json.tmp")
+
+        with tmp_path.open("w", encoding="utf-8") as f:
+            json.dump(output_data, f, ensure_ascii=False, indent=2)
+
+        tmp_path.replace(final_result_path)
+
+        self.log(
+            f"[FINAL] beatmapset_id={beatmapset_id} 替换完成，"
+            f"删除旧结果 {removed_count} 条，写入新结果 {len(normalized_new_items)} 条"
+        )
+
 
     def load_beatmap_info_file(self, info_path: Path) -> dict[str, Any]:
         """
@@ -765,83 +934,61 @@ class MixedAnalysisWorker:
 
         return osz_path
 
-    def load_final_result_md5_index(
-        self,
-        final_result_path: Path | None = None,
-    ) -> dict[str, dict[str, Any]]:
+    def load_final_result_osz_index(self, final_result_path: Path) -> dict[str, list[Any]]:
         """
-        加载已有 final_result.json，并建立 osu_md5 -> item 的索引。
+        读取 final_result.json，并按 osz_sha256 建立索引。
 
-        支持两种结构：
-
-        1. 顶层是 list:
-        [
-            {"title": "...", "osu_md5": "..."},
-            ...
-        ]
-
-        2. 顶层是 dict:
-        {
-            "items": [
-            {"title": "...", "osu_md5": "..."},
-            ...
-            ]
-        }
+        返回:
+            {
+                "osz_sha256": [item1, item2, ...]
+            }
         """
+        index: dict[str, list[Any]] = {}
 
-        if final_result_path is None:
-            final_result_path = Path(self.output_dir) / "final_result.json"
-
-        final_result_path = Path(final_result_path)
-
-        if not final_result_path.exists() or not final_result_path.is_file():
-            self.log(f"[GUI] 未找到已有 final_result.json: {final_result_path}")
-            return {}
+        if not final_result_path.exists():
+            self.log(f"[GUI] 未找到既有 final_result.json: {final_result_path}")
+            return index
 
         try:
-            payload = json.loads(
-                final_result_path.read_text(encoding="utf-8")
-            )
+            import json
+
+            with open(final_result_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
         except Exception as exc:
             self.log(f"[GUI WARN] 读取 final_result.json 失败: {exc}")
-            return {}
+            return index
 
-        if isinstance(payload, list):
-            items = payload
-        elif isinstance(payload, dict):
-            raw_items = payload.get("items")
-            if isinstance(raw_items, list):
-                items = raw_items
+        if isinstance(data, list):
+            items = data
+        elif isinstance(data, dict):
+            if isinstance(data.get("results"), list):
+                items = data["results"]
+            elif isinstance(data.get("items"), list):
+                items = data["items"]
             else:
-                self.log("[GUI WARN] final_result.json 中没有有效 items")
-                return {}
+                items = []
         else:
-            self.log("[GUI WARN] final_result.json 格式不是 list/dict")
-            return {}
-
-        md5_index: dict[str, dict[str, Any]] = {}
+            items = []
 
         for item in items:
             if not isinstance(item, dict):
                 continue
 
-            osu_md5 = (
-                item.get("osu_md5")
-                or item.get("source_osu_md5")
-                or item.get("md5")
-                or ""
+            osz_sha256 = (
+                item.get("osz_sha256")
+                or item.get("source_osz_sha256")
+                or item.get("source", {}).get("osz_sha256")
             )
 
-            osu_md5 = str(osu_md5 or "").strip().lower()
-
-            if not osu_md5:
+            if not osz_sha256:
                 continue
 
-            md5_index[osu_md5] = item
+            index.setdefault(osz_sha256, []).append(item)
 
-        self.log(f"[GUI] 已加载 final_result md5 索引: {len(md5_index)} 条")
+        self.log(f"[GUI] final_result osz_sha256 索引数量: {len(index)}")
 
-        return md5_index
+        return index
+
     
     def find_existing_final_result_by_osu_md5(
         self,
@@ -880,28 +1027,13 @@ class MixedAnalysisWorker:
     def run_info_file(self):
         """
         处理下载器 beatmap_info.json。
-
-        info 模式下：
-            BMS 输出目录会使用 source_meta["bms_output_subdir"]。
-            例如：
-                GUI 传入:
-                    E:/_BMS_/SONGS/OSU_PACK_QUEUE/test
-
-                beatmap_info:
-                    osu_maps\\9650304 [aci]\\1526196 Camellia - Kisaragi.osz
-
-                最终 BMS 输出目录:
-                    E:/_BMS_/SONGS/OSU_PACK_QUEUE/test/9650304 [aci]
-
-        注意：
-            是否真的追加子目录，由 run_bms_convert_and_analysis()
-            根据 self.current_mode == "info" 判断。
         """
 
         if self.input_info_file is None:
             raise FileNotFoundError("未指定 beatmap_info.json")
 
         previous_mode = getattr(self, "current_mode", None)
+        original_bms_output_dir = Path(self.bms_output_dir)
         self.current_mode = "info"
 
         try:
@@ -913,19 +1045,19 @@ class MixedAnalysisWorker:
             self.log(f"[GUI] beatmap_info: {self.input_info_file}")
             self.log(f"[GUI] 记录数量: {len(records)}")
             self.log(f"[GUI] JSON 保存目录: {self.output_dir}")
-            self.log(f"[BMS] BMS 基础输出目录: {self.bms_output_dir}")
+            self.log(f"[BMS] BMS 基础输出目录: {original_bms_output_dir}")
             self.log("=" * 70)
 
             if not records:
                 self.log("[GUI] beatmap_info.json 中没有有效记录")
                 return
-
             # ------------------------------------------------------------
-            # 启动时加载已有 final_result.json，并建立 osu_md5 索引
+            # 启动时加载已有 final_result.json，并建立 osz_sha256 索引
             # ------------------------------------------------------------
-            final_result_md5_index = self.load_final_result_md5_index(
+            final_result_osz_index = self.load_final_result_osz_index(
                 Path(self.output_dir) / "final_result.json"
             )
+
 
             total_osu_count = 0
             total_mixed_count = 0
@@ -934,11 +1066,21 @@ class MixedAnalysisWorker:
             total_skipped_count = 0
 
             merged_items: list[Any] = []
+            def flush_merged_results_after_osz():
+                """
+                每处理完一个 .osz 后，立即合并保存一次 JSON。
+                """
+                if self.merge_json_results and merged_items:
+                    self.save_merged_json_results(merged_items)
+
 
             for record_idx, (beatmapset_id, record) in enumerate(records, 1):
                 if not self.running:
                     self.log("[GUI] beatmap_info 分析已中断")
                     break
+
+                # 每个 .osz 开始前，先恢复到基础 BMS 输出目录
+                self.bms_output_dir = original_bms_output_dir
 
                 self.log("")
                 self.log("#" * 70)
@@ -966,22 +1108,82 @@ class MixedAnalysisWorker:
                 if osz_sha256:
                     self.log(f"[GUI] osz_sha256: {osz_sha256}")
 
-                # 当前 beatmap_info 记录对应的 BMS 输出子目录
+                # ------------------------------------------------------------
+                # 解压 .osz 前，先用 osz_sha256 查 final_result.json。
+                # 如果命中，则整个 .osz 跳过，不解压、不重新分析。
+                # ------------------------------------------------------------
+                existing_final_items = []
+                if osz_sha256:
+                    existing_final_items = final_result_osz_index.get(osz_sha256, [])
+
+                if existing_final_items:
+                    self.log(
+                        f"[GUI] 命中 final_result.json 既有结果，跳过整个 .osz: {osz_path.name}"
+                    )
+                    self.log(f"[GUI] osz_sha256: {osz_sha256}")
+                    self.log(f"[GUI] 命中结果数量: {len(existing_final_items)}")
+
+                    for existing_item in existing_final_items:
+                        skipped_item = deepcopy(existing_item)
+
+                        # 刷新当前来源信息
+                        skipped_item["osz_sha256"] = osz_sha256
+                        skipped_item["source_osz_path"] = str(osz_path)
+                        skipped_item["source_osz_filename"] = osz_path.name
+                        skipped_item["beatmap_info_path"] = str(self.input_info_file)
+
+                        time_info = record.get("time", {}) if isinstance(record, dict) else {}
+
+                        downloaded_at = time_info.get("downloaded_at")
+                        official_last_updated = time_info.get("last_updated")
+
+                        if downloaded_at:
+                            skipped_item["downloaded_at"] = downloaded_at
+
+                        if official_last_updated:
+                            skipped_item["official_last_updated"] = official_last_updated
+
+                        merged_items.append(skipped_item)
+
+                        total_skipped_count += 1
+                        total_mixed_count += 1
+
+                        if skipped_item.get("bms") or skipped_item.get("bms_difficulty"):
+                            total_bms_count += 1
+
+                    # 当前 .osz 命中缓存，也立即保存一次合并结果
+                    flush_merged_results_after_osz()
+
+                    # 这里不解压、不转换、不分析，直接处理下一个 .osz
+                    continue
+
+
+
                 bms_output_subdir = self.get_bms_output_subdir_from_record(record)
-                if bms_output_subdir:
-                    self.log(f"[BMS] 当前 .osz 输出子目录: {bms_output_subdir}")
-                else:
-                    self.log("[BMS] 当前 .osz 未取得输出子目录，将使用基础 BMS 输出目录")
+                if self.output_bms:
+                    osz_name = osz_path.stem
+                    map_pack_folder_name = osz_path.parent.name
+                    bms_output_subdir = str(Path(map_pack_folder_name) / osz_name)
+                    osz_bms_ok, osz_bms_payload = self.run_bms_convert_osz_and_analysis(
+                        osz_file=osz_path,
+                        analyze_bms=False,
+                        output_folder_name=bms_output_subdir,
+                    )
+                    if not osz_bms_ok:
+                        self.log(f"[BMS TEST] OSZ 整包转换 payload: {osz_bms_payload}")
+
 
                 try:
                     osu_files = self.extract_osz(osz_path)
                 except Exception as exc:
                     self.log(f"[GUI ERROR] 解压 .osz 失败: {exc}")
+                    self.bms_output_dir = original_bms_output_dir
                     continue
 
                 if not osu_files:
                     self.log(f"[GUI] 跳过，没有找到 .osu: {osz_path}")
                     self.cleanup_temp_dir()
+                    self.bms_output_dir = original_bms_output_dir
                     continue
 
                 self.log(f"[GUI] 当前 .osz 包含 {len(osu_files)} 个 .osu")
@@ -1008,63 +1210,6 @@ class MixedAnalysisWorker:
                         beatmap_info_record=record,
                     )
 
-                    # ------------------------------------------------------------
-                    # info 模式专用：
-                    # 传给 run_bms_convert_and_analysis()，
-                    # 让 BMS 输出到 self.bms_output_dir / bms_output_subdir
-                    # ------------------------------------------------------------
-                    source_meta["bms_output_subdir"] = bms_output_subdir
-
-                    # ------------------------------------------------------------
-                    # 解压得到 .osu 后，立刻用 osu_md5 查 final_result.json。
-                    # 如果命中，则注入新的 metadata，跳过实际分析。
-                    # ------------------------------------------------------------
-                    existing_final_item = self.find_existing_final_result_by_osu_md5(
-                        source_meta,
-                        final_result_md5_index,
-                    )
-
-                    if existing_final_item is not None:
-                        osu_md5 = (
-                            source_meta.get("osu_md5")
-                            or source_meta.get("source_osu_md5")
-                            or ""
-                        )
-
-                        self.log(
-                            f"[GUI] 命中 final_result.json 既有结果，跳过分析: {osu_file.name}"
-                        )
-                        self.log(f"[GUI] osu_md5: {osu_md5}")
-
-                        skipped_item = deepcopy(existing_final_item)
-
-                        # 重新注入当前 beatmap_info 的 metadata
-                        skipped_item = self.inject_source_fields_to_output(
-                            skipped_item,
-                            source_meta,
-                        )
-
-                        merged_items.append(skipped_item)
-
-                        total_skipped_count += 1
-
-                        # 这个谱面已有结果，视作 mixed 成功
-                        total_mixed_count += 1
-
-                        # 如果旧 item 里有 BMS 结果，可以视作 bms 成功
-                        if skipped_item.get("bms") or skipped_item.get("bms_difficulty"):
-                            total_bms_count += 1
-
-                        continue
-
-                    # ------------------------------------------------------------
-                    # 没有命中旧 final_result，则正常分析
-                    #
-                    # 注意：
-                    # 不要在这里直接调用 run_bms_convert_and_analysis()。
-                    # 应该走 process_one_osu_file()，
-                    # 因为它内部会先跑 mixed，再决定是否跑 BMS。
-                    # ------------------------------------------------------------
                     mixed_ok, bms_ok, saved_item = self.process_one_osu_file(
                         osu_file=osu_file,
                         source_meta=source_meta,
@@ -1083,6 +1228,10 @@ class MixedAnalysisWorker:
                         merged_items.append(saved_item)
 
                 self.cleanup_temp_dir()
+                # 当前 .osz 处理完后，立即合并保存一次 JSON
+                flush_merged_results_after_osz()
+                # 当前 .osz 处理完，恢复基础目录，避免影响下一个 .osz
+                self.bms_output_dir = original_bms_output_dir
 
             self.log("")
             self.log("=" * 70)
@@ -1106,7 +1255,10 @@ class MixedAnalysisWorker:
                 self.log("[GUI] 没有可合并的 JSON 结果")
 
         finally:
+            # 无论中途是否异常，都恢复原始状态
+            self.bms_output_dir = original_bms_output_dir
             self.current_mode = previous_mode
+
 
 
     # ------------------------------------------------------------------
@@ -1115,96 +1267,42 @@ class MixedAnalysisWorker:
 
     def build_source_meta(
         self,
-        *,
         source_type: str,
         osu_file: Path,
         source_osz_path: Path | None = None,
         source_osz_sha256: str | None = None,
         beatmap_info_path: Path | None = None,
-        beatmap_info_record: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """
-        构造来源元数据。
+        beatmap_info_record: dict | None = None,
+    ) -> dict:
+        source_meta = {}
 
-        所有入口都会写入：
-            osu_md5 / source_osu_md5
-            analyzed_at
-            downloaded_at
-            last_updated
-
-        非 beatmap_info 入口没有下载时间/更新时间时：
-            downloaded_at = ""
-            last_updated = ""
-        """
-
-        source_osu_md5 = ""
-
-        try:
-            source_osu_md5 = self.file_md5(osu_file)
-        except Exception as exc:
-            self.log(f"[GUI WARN] 计算 source_osu_md5 失败: {exc}")
-
-        analyzed_at = self.now_iso()
-
-        meta: dict[str, Any] = {
-            "source_type": source_type,
-
-            # 原始 .osu 文件信息
-            "source_osu_path": str(osu_file),
-            "source_osu_md5": source_osu_md5,
-
-            # 兼容你要求的字段名
-            "osu_md5": source_osu_md5,
-
-            # 所有模式都有分析时间
-            "analyzed_at": analyzed_at,
-
-            # 默认没有下载/更新时间
-            "downloaded_at": "",
-            "last_updated": "",
-
-            "analyzer_version": self.analyzer_version,
-        }
+        source_meta["source_type"] = source_type
 
         if source_osz_path is not None:
-            meta["source_osz_path"] = str(source_osz_path)
+            source_meta["source_osz_path"] = str(source_osz_path)
+            source_meta["source_osz_filename"] = source_osz_path.name
 
         if source_osz_sha256:
-            meta["source_osz_sha256"] = source_osz_sha256
+            source_meta["osz_sha256"] = source_osz_sha256
+            source_meta["source_osz_sha256"] = source_osz_sha256
 
         if beatmap_info_path is not None:
-            meta["beatmap_info_path"] = str(beatmap_info_path)
+            source_meta["beatmap_info_path"] = str(beatmap_info_path)
 
-        if isinstance(beatmap_info_record, dict):
-            time_info = beatmap_info_record.get("time")
-            if not isinstance(time_info, dict):
-                time_info = {}
+        if beatmap_info_record:
+            time_info = beatmap_info_record.get("time", {})
 
-            download_info = beatmap_info_record.get("download")
-            if not isinstance(download_info, dict):
-                download_info = {}
+            downloaded_at = time_info.get("downloaded_at")
+            official_last_updated = time_info.get("last_updated")
 
-            submitted_date = time_info.get("submitted_date") or ""
-            last_updated = time_info.get("last_updated") or ""
-            downloaded_at = time_info.get("downloaded_at") or ""
+            if downloaded_at:
+                source_meta["downloaded_at"] = downloaded_at
 
-            meta["beatmapset_id"] = beatmap_info_record.get("beatmapset_id")
-            meta["official_url"] = beatmap_info_record.get("official_url") or ""
+            if official_last_updated:
+                source_meta["official_last_updated"] = official_last_updated
 
-            meta["song"] = beatmap_info_record.get("song") or {}
-            meta["mapper"] = beatmap_info_record.get("mapper") or {}
+        return source_meta
 
-            meta["submitted_date"] = submitted_date
-            meta["last_updated"] = last_updated
-            meta["downloaded_at"] = downloaded_at
-
-            meta["download_filename"] = download_info.get("filename") or ""
-            meta["download_file_path"] = download_info.get("file_path") or ""
-            meta["download_source"] = download_info.get("source") or ""
-            meta["download_url"] = download_info.get("url") or ""
-            meta["download_with_video"] = download_info.get("with_video")
-
-        return meta
     
     def get_analysis_index_path(self) -> Path:
         return self.output_dir / self.analysis_index_filename
@@ -1303,18 +1401,6 @@ class MixedAnalysisWorker:
     ) -> Any:
         """
         将来源字段直接写入每个谱面最终结果对象。
-
-        最终只新增这些字段：
-
-            osu_md5
-            downloaded_at
-            last_updated
-            analyzed_at
-            analyzer_version
-
-        不写入：
-            source
-            source_osu_md5
         """
 
         if not isinstance(data_to_save, dict):
@@ -1323,9 +1409,9 @@ class MixedAnalysisWorker:
         if not isinstance(source_meta, dict):
             source_meta = {}
 
-        osu_md5 = (
-            source_meta.get("source_osu_md5")
-            or source_meta.get("osu_md5")
+        osz_sha256 = (
+            source_meta.get("osz_sha256")
+            or source_meta.get("source_osz_sha256")
             or ""
         )
 
@@ -1334,13 +1420,14 @@ class MixedAnalysisWorker:
         analyzed_at = source_meta.get("analyzed_at") or self.now_iso()
         analyzer_version = source_meta.get("analyzer_version") or self.analyzer_version
 
-        data_to_save["osu_md5"] = osu_md5
+        data_to_save["osz_sha256"] = osz_sha256
         data_to_save["downloaded_at"] = downloaded_at
         data_to_save["last_updated"] = last_updated
         data_to_save["analyzed_at"] = analyzed_at
         data_to_save["analyzer_version"] = analyzer_version
 
         return data_to_save
+
 
     
     def load_existing_result_for_merge(
@@ -1437,25 +1524,9 @@ class MixedAnalysisWorker:
         save_file: bool | None = None,
         print_summary: bool | None = None,
         log_result: bool | None = None,
+        skip_output_bms: bool = False
     ) -> tuple[bool, bool, Any | None]:
         """
-        保留原核心调用链：
-
-            run_node_process()
-            should_run_bms_after_mixed()
-            run_bms_convert_and_analysis()
-            save_json_and_print_summary()
-
-        新增：
-            使用 source_osu_md5 + analyzer_version 跳过已分析谱面。
-
-        注意：
-            BMS 输出子目录逻辑不在这里判断。
-            这里只负责把 source_meta 传给 run_bms_convert_and_analysis()。
-            是否启用 info 子目录，由 run_bms_convert_and_analysis() 根据 current_mode 判断。
-
-        Returns:
-            mixed_ok, bms_ok, saved_item
         """
 
         if save_file is None:
@@ -1502,7 +1573,7 @@ class MixedAnalysisWorker:
                 self.log("[SKIP] 旧结果不可用，将重新分析")
 
         # ------------------------------------------------------------
-        # 2. 原 mixed 分析
+        # 2.  mixed 分析
         # ------------------------------------------------------------
         ok, data = self.run_node_process(osu_file)
 
@@ -1510,7 +1581,7 @@ class MixedAnalysisWorker:
             data = {}
 
         # ------------------------------------------------------------
-        # 3. 原 BMS 判断
+        # 3.  BMS 判断
         # ------------------------------------------------------------
         should_convert_bms, should_analyze_bms, reason = self.should_run_bms_after_mixed(data)
 
@@ -1525,6 +1596,7 @@ class MixedAnalysisWorker:
                 osu_file=osu_file,
                 analyze_bms=should_analyze_bms,
                 source_meta=source_meta,
+                skip_output_bms = skip_output_bms
             )
         else:
             self.log("")

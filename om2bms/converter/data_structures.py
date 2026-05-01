@@ -3,6 +3,15 @@ from typing import Union, List, Tuple, Dict
 from om2bms.converter.exceptions import BMSHitSoundException
 
 
+def normalize_bpm(bpm):
+    """
+    Normalize BPM float values to a stable precision for storage/comparison.
+    Using 4 decimals matches the existing calculate/store behavior better and
+    avoids mismatches caused by float artifacts.
+    """
+    return round(float(bpm), 4)
+
+
 class OsuMania:
     """Class containing information from .osu file"""
 
@@ -47,11 +56,13 @@ class OsuMania:
         """
         Parse float bpm into (INDEX, BPM)
         """
+        bpm = normalize_bpm(bpm)
         for e in self.float_bpm:
-            if e[1] == bpm:
+            if normalize_bpm(e[1]) == bpm:
                 return
         self.float_bpm.append(
-            (get_current_hs_count(len(self.float_bpm) + 1), bpm))
+            (get_current_hs_count(len(self.float_bpm) + 1), bpm)
+        )
 
 
 class OsuTimingPoint:
@@ -132,15 +143,16 @@ class HitSound(SoundEvent):
     hit_sound key
     """
 
-    def __init__(self, hitsound: int, tp: Union[OsuTimingPoint, None], sample_set: int, custom_index:
-                 int, filename: str, sample_num: int):
+    def __init__(self, hitsound: int, tp: Union['OsuTimingPoint', None], sample_set: int, custom_index: int,
+                 filename: str, sample_num: int):
         super().__init__()
         self.timing_point = tp
         self.hitsound = hitsound
         self.sample_set = sample_set
         self.custom_index = custom_index if custom_index != 0 else self.timing_point.sample_index
-        self.filename = filename if filename != "" else self.build_filename(self.custom_index, self.sample_set,
-                                                                            self.hitsound)
+        self.filename = filename if filename != "" else self.build_filename(
+            self.custom_index, self.sample_set, self.hitsound
+        )
         self.addition_set = self.sample_set  # needed?
         self.index = get_current_hs_count(sample_num)
 
@@ -233,7 +245,7 @@ class BMSMeasure:
         return str(ret)
 
     def create_data_line(self, channel: str, bits: int,
-                         locations: List[Tuple[List[int], Union[OsuHitObject, OsuBGSoundEvent, str]]]):
+                         locations: List[Tuple[List[int], Union['OsuHitObject', 'OsuBGSoundEvent', str]]]):
         """
         Wrapper for creating data_line
         """
@@ -259,7 +271,6 @@ class BMSMeasure:
         """
         Channel 2 measure length change
         """
-        # beats_over_four = float(num_of_beats / 4)
         self.lines.append(BMSMainDataLine(
             "02", 1, {0: str(num_of_beats)}, [0], self.measure_number))
 
@@ -273,11 +284,23 @@ class BMSMeasure:
     def create_bpm_extended_change_line(self, bpm: Union[int, float], float_bpm_arr):
         """
         Channel 8 bpm change. Takes real number.
+        Conservative behavior:
+        - normalize float for matching
+        - if not found, auto-register into float_bpm_arr instead of raising
         """
-        tup = (None, None)
+        bpm = normalize_bpm(bpm)
+        tup = None
+
         for e in float_bpm_arr:
-            if e[1] == bpm:
+            if normalize_bpm(e[1]) == bpm:
                 tup = e
+                break
+
+        if tup is None:
+            new_index = get_current_hs_count(len(float_bpm_arr) + 1)
+            tup = (new_index, bpm)
+            float_bpm_arr.append(tup)
+
         self.lines.append(BMSMainDataLine(
             "08", 1, {0: str(tup[0])}, [0], self.measure_number))
 
@@ -344,7 +367,9 @@ def get_current_hs_count(sample_num: int) -> str:
 
 def calculate_bpm(timing_point: OsuTimingPoint) -> Union[int, float]:
     """
-    Calculates bpm and rounds if decimals 1-4 are 0 or 9
+    Calculates bpm and rounds if decimals 1-4 are 0 or 9.
+    Uses rounding instead of truncation to avoid mismatches like:
+    249.6 vs 249.5999, 230.3999 vs 230.3998
     """
     def get_nth_decimal(number, n):
         """
@@ -359,9 +384,10 @@ def calculate_bpm(timing_point: OsuTimingPoint) -> Union[int, float]:
             count += 1
         elif get_nth_decimal(bpm_float, i) == 9:
             ncount += 1
+
     if count == 4:
-        return int(bpm_float)
+        return int(round(bpm_float))
     elif ncount == 4:
-        return round(bpm_float)
+        return int(round(bpm_float))
     else:
-        return int(bpm_float * (10 ** 4)) / 10000
+        return normalize_bpm(round(bpm_float, 4))

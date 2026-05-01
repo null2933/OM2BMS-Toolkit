@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 import shutil
 import tempfile
+import traceback
 
 from om2bms.pipeline.service import ConversionPipelineService
 from om2bms.pipeline.types import ConversionOptions, DifficultyAnalysisMode
@@ -455,7 +456,7 @@ def build_bms_conversion_options(
     """
 
     return ConversionOptions(
-        hitsound=True,
+        hitsound=False,
         bg=True,
         offset=0,
         tn_value=0.2,
@@ -470,6 +471,37 @@ def build_bms_conversion_options(
         difficulty_target_id=None,
         include_output_content=False,
     )
+
+def build_bms_osz_conversion_options(
+    *,
+    analyze_bms: bool,
+    output_folder_name: str | None = None,
+) -> ConversionOptions:
+    """
+    构建 .osz 整包转换参数。
+
+    注意：
+        .osz 整包转换没有单个 osu_file，
+        所以不能使用 osu_file.stem。
+    """
+
+    return ConversionOptions(
+        hitsound=False,
+        bg=True,
+        offset=0,
+        tn_value=0.2,
+        judge=3,
+        output_folder_name=output_folder_name,
+        enable_difficulty_analysis=bool(analyze_bms),
+        difficulty_analysis_mode=(
+            DifficultyAnalysisMode.ALL
+            if analyze_bms
+            else DifficultyAnalysisMode.OFF
+        ),
+        difficulty_target_id=None,
+        include_output_content=False,
+    )
+
 
 
 def run_bms_convert_and_analysis(
@@ -558,6 +590,95 @@ def run_bms_convert_and_analysis(
                 log_func(f"[BMS] 已清理临时目录: {bms_temp_dir}")
             except Exception as exc:
                 log_func(f"[BMS] 清理临时目录失败: {exc}")
+
+def run_bms_convert_osz_and_analysis(
+    *,
+    osz_file: Path,
+    analyze_bms: bool,
+    output_bms: bool,
+    output_dir: Path,
+    bms_output_dir: Path | None,
+    output_folder_name: str | None,
+    log_func: LogFunc,
+) -> tuple[bool, dict[str, Any]]:
+    """
+    对整个 .osz 执行 BMS 转换。
+    """
+
+    bms_temp_dir: Path | None = None
+
+    try:
+        osz_file = Path(osz_file)
+        output_dir = Path(output_dir)
+
+        if output_bms:
+            real_output_dir = Path(bms_output_dir or output_dir)
+            temporary_output = False
+            log_func("[BMS] OSZ 输出 BMS: 是")
+        else:
+            bms_temp_dir = Path(tempfile.mkdtemp(prefix="mixed_bms_osz_"))
+            real_output_dir = bms_temp_dir
+            temporary_output = True
+            log_func("[BMS] OSZ 输出 BMS: 否，使用临时目录")
+
+        real_output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 关键修改：
+        # .osz 不能调用 build_bms_conversion_options(osu_file=None, ...)
+        options = build_bms_osz_conversion_options(
+            analyze_bms=analyze_bms,
+            output_folder_name=output_folder_name,
+        )
+
+        service = ConversionPipelineService()
+
+        result = service.convert_osz_archive(
+            archive_path=osz_file,
+            output_dir=real_output_dir,
+            options=options,
+        )
+        log_bms_conversion_result(
+            result=result,
+            analyze_bms=analyze_bms,
+            log_func=log_func,
+        )
+
+        payload = build_bms_result_payload(
+            result,
+            analyze_bms=analyze_bms,
+            output_bms=output_bms,
+            temporary_output=temporary_output,
+            include_extra_info=True,
+            log_func=log_func,
+        )
+
+        return bool(getattr(result, "conversion_success", False)), payload
+
+    except Exception as exc:
+        log_func(f"[BMS ERROR] OSZ 转换失败: {exc}")
+
+        try:
+            log_func("[BMS ERROR] traceback:")
+            log_func(traceback.format_exc())
+        except Exception:
+            pass
+
+        payload = build_bms_error_payload(
+            exc,
+            analyze_bms=analyze_bms,
+            output_bms=output_bms,
+            temporary_output=not output_bms,
+        )
+
+        return False, payload
+
+    finally:
+        if bms_temp_dir is not None and not output_bms:
+            try:
+                shutil.rmtree(bms_temp_dir, ignore_errors=True)
+                log_func(f"[BMS] 已清理 OSZ BMS 临时目录: {bms_temp_dir}")
+            except Exception as exc:
+                log_func(f"[BMS WARN] 清理 OSZ BMS 临时目录失败: {exc}")
 
 
 def log_bms_conversion_result(

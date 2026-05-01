@@ -64,6 +64,10 @@ class OsuManiaToBMSParser:
             if text:
                 return text
         return default
+    
+    @staticmethod
+    def normalize_bpm(bpm):
+        return round(float(bpm), 6)
 
     def __init__(self, in_file, out_dir, filename):
         self.reset()
@@ -445,7 +449,7 @@ class OsuManiaToBMSParser:
         True if n is close enough to base
         """
         return base - 2 <= n <= base + 2
-
+   
     def create_measure(self, current_measure, timing_point: OsuTimingPoint, measure_start: float,
                        measure_number: str, measure_truncation: float):
         """
@@ -506,7 +510,7 @@ class OsuManiaToBMSParser:
                         ([time_value_ratio.numerator, time_value_ratio.denominator], note))
 
                 if key == 0 and not current_measure[key][0].inherited:
-                    new_bpm = calculate_bpm(current_measure[key][0])
+                    new_bpm = OsuManiaToBMSParser.normalize_bpm(calculate_bpm(current_measure[key][0]))
                     if new_bpm <= 255 and isinstance(new_bpm, int):
                         bms_measure.create_bpm_change_line(new_bpm)
                     else:
@@ -527,25 +531,7 @@ class OsuManiaToBMSParser:
                         2), gcd_, sorted(locations_, key=lambda x: x[0]))
 
             return bms_measure
-    # def create_statistics(self) -> List[str]:
-    #     """
-    #     Makes statistics field after maindata field
-    #     """
-    #     buffer = list([""])
-    #     buffer = list([""])
-    #     ln_count = self.ln_count // 2
-    #     total_count = self.note_count + ln_count
-    #     ln_ratio = ln_count / total_count if total_count > 0 else 0
 
-    #     buffer.append("")
-    #     buffer.append("*---------------------- STATISTICS")
-    #     buffer.append(f"; LN_COUNT: {ln_count}")
-    #     buffer.append(f"; NOTE_COUNT: {self.note_count}")
-    #     buffer.append(f"; TOTAL_COUNT: {total_count}")
-    #     buffer.append(f"; LN_RATIO: {ln_ratio:.6f}")
-    #     buffer.append("*---------------------------------")
-
-    #     return buffer
 
     def create_header(self) -> List[str]:
         """
@@ -576,7 +562,7 @@ class OsuManiaToBMSParser:
             buffer.append(f"#ARTIST {artist_text}/obj:{creator_text}")
         else:
             buffer.append(f"#ARTIST {artist_text}")
-
+        print(str(int(calculate_bpm(self.beatmap.timing_points[0]))))
         buffer.append(
             "#BPM " + str(int(calculate_bpm(self.beatmap.timing_points[0]))))
         buffer.append("#DIFFICULTY " + "5")
@@ -610,7 +596,8 @@ class OsuManiaToBMSParser:
             buffer.append("")
         if len(self.beatmap.float_bpm) > 0:
             for e in self.beatmap.float_bpm:
-                buffer.append("#BPM" + str(e[0]) + " " + str(e[1]))
+                buffer.append("#BPM" + str(e[0]) + " " + str(OsuManiaToBMSParser.normalize_bpm(e[1])))
+
             buffer.append("")
         # BGM FIELD
         buffer.append("*---------------------- EXPANSION FIELD")
