@@ -153,14 +153,58 @@ class OsuManiaToBMSParser:
         """
         if buffer is None:
             return
+
         elif isinstance(buffer, BMSMeasure):
+            wrote_any = False
+
             for line in buffer.lines:
-                OsuManiaToBMSParser._out_file.write(str(line))
-        else:
-            for line in buffer:
-                OsuManiaToBMSParser._out_file.write(line)
+                if line is None:
+                    continue
+
+                # 防止空 dict 被写进 BMS
+                if isinstance(line, dict) and not line:
+                    continue
+
+                text = str(line)
+
+                # 防止 __str__ 后变成 "{}"
+                if text.strip() == "{}":
+                    continue
+
+                if text.strip() == "":
+                    continue
+
+                OsuManiaToBMSParser._out_file.write(text)
+                wrote_any = True
+
+            if wrote_any:
                 OsuManiaToBMSParser._out_file.write("\n")
-        OsuManiaToBMSParser._out_file.write("\n")
+
+        else:
+            wrote_any = False
+
+            for line in buffer:
+                if line is None:
+                    continue
+
+                if isinstance(line, dict) and not line:
+                    continue
+
+                text = str(line)
+
+                if text.strip() == "{}":
+                    continue
+
+                if text.strip() == "":
+                    continue
+
+                OsuManiaToBMSParser._out_file.write(text)
+                OsuManiaToBMSParser._out_file.write("\n")
+                wrote_any = True
+
+            if wrote_any:
+                OsuManiaToBMSParser._out_file.write("\n")
+
 
     def expansion_wrapper(self, n, ms_per_measure) -> Fraction:
         """
@@ -695,7 +739,7 @@ class OsuManiaToBMSParser:
                 for i in range(len(locations_)):
                     num = locations_[i][0][0]
                     den = locations_[i][0][1]
-                    print("[DEBUG key=1]", measure_number, locations)
+                    # print("[DEBUG key=1]", measure_number, locations)
                     if num < 0 or num >= den:
                         print("[WARN] invalid BGM location:",
                             "measure=", measure_number,
