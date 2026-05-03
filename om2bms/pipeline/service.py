@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 
 from om2bms.analysis.service import DifficultyAnalyzerService
@@ -14,6 +16,60 @@ from om2bms.pipeline.types import (
 )
 
 
+def safe_windows_folder_name(name: str) -> str:
+    """
+    Make a Windows-safe folder name.
+
+    Windows 会自动去掉目录名末尾的英文句点 . 和空格。
+    例如：
+        "abc...." 实际可能变成 "abc"
+    这会导致程序记录的输出目录和真实目录不一致。
+
+    所以这里把：
+        1. Windows 不允许的字符替换成 _
+        2. 控制字符替换成 _
+        3. 末尾的 . 和空格替换成 _
+        4. Windows 保留设备名加前缀 _
+    """
+    if name is None:
+        return "unknown"
+
+    name = str(name).strip()
+
+    # Windows illegal filename chars: < > : " / \ | ? *
+    name = re.sub(r'[<>:"/\\|?*]', "_", name)
+
+    # Control chars
+    name = re.sub(r"[\x00-\x1f]", "_", name)
+
+    if not name:
+        return "unknown"
+
+    # Windows 不可靠支持末尾为 . 或空格的目录名
+    trailing_count = 0
+    while name and name[-1] in ". ":
+        trailing_count += 1
+        name = name[:-1]
+
+    if trailing_count:
+        name += "_" * trailing_count
+
+    if not name:
+        name = "unknown"
+
+    # Windows reserved device names
+    reserved = {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    }
+
+    if name.upper() in reserved:
+        name = "_" + name
+
+    return name
+
+
 class ConversionPipelineService:
     def __init__(self, analyzer: DifficultyAnalyzerService | None = None) -> None:
         self.analyzer = analyzer or DifficultyAnalyzerService()
@@ -25,7 +81,10 @@ class ConversionPipelineService:
         options: ConversionOptions,
     ) -> ConversionResult:
         archive = Path(archive_path)
+
         output_folder_name = options.output_folder_name or archive.stem
+        output_folder_name = safe_windows_folder_name(output_folder_name)
+
         output_root = Path(output_dir) / output_folder_name
         output_root.mkdir(parents=True, exist_ok=True)
 
@@ -78,7 +137,10 @@ class ConversionPipelineService:
         options: ConversionOptions,
     ) -> ConversionResult:
         osu_file = Path(osu_path)
+
         output_folder_name = options.output_folder_name or osu_file.stem
+        output_folder_name = safe_windows_folder_name(output_folder_name)
+
         output_root = Path(output_dir) / output_folder_name
         output_root.mkdir(parents=True, exist_ok=True)
 
@@ -317,4 +379,3 @@ class ConversionPipelineService:
             error=None,
             output_path=chart.output_path,
         )
-
